@@ -20,6 +20,7 @@ from src.collectors.earnings_calendar import fetch_upcoming_earnings
 from src.collectors.market_data import fetch_market_data
 from src.collectors.social_mentions import fetch_social_mentions
 from src.collectors.ticker_universe import fetch_hyped_tickers
+from src.collectors.yahoo_trending import fetch_yahoo_trend_ranks
 from src.storage.sqlite_store import SQLiteStore
 
 
@@ -68,6 +69,15 @@ def run_refresh_pipeline(database_path=DATABASE_FILE) -> PipelineResult:
         else:
             store.upsert_daily_metrics(mentions)
             result.social_mentions_collected = True
+
+        result.log("Fetching Yahoo Finance trending ranks...")
+        yahoo_ranks = fetch_yahoo_trend_ranks(tickers)
+        if yahoo_ranks.empty:
+            result.log("Yahoo Finance returned no trending data (network or API issue).")
+        else:
+            store.upsert_yahoo_trend_ranks(yahoo_ranks)
+            on_list = yahoo_ranks["yahoo_trend_rank"].notna().sum()
+            result.log(f"Yahoo trending snapshot saved ({on_list} tickers on-list).")
     else:
         result.log("No upcoming earnings found in this refresh; rescoring existing history.")
 

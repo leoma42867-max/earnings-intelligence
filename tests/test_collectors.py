@@ -14,6 +14,7 @@ from src.collectors import (
     social_mentions,
     stock_info,
     ticker_universe,
+    yahoo_trending,
 )
 
 
@@ -145,6 +146,36 @@ class CollectorTests(unittest.TestCase):
 
         self.assertTrue(result.empty)
         self.assertEqual(list(result.columns), ["date", "ticker", "social_mentions"])
+
+    @patch("src.collectors.yahoo_trending.requests.get")
+    def test_yahoo_trend_ranks_assigns_equity_positions_and_null_off_list(
+        self, get_mock
+    ) -> None:
+        get_mock.return_value = FakeStockTwitsResponse(
+            {
+                "finance": {
+                    "result": [
+                        {
+                            "quotes": [
+                                {"symbol": "IBM"},
+                                {"symbol": "ETH-USD"},
+                                {"symbol": "AAPL"},
+                            ]
+                        }
+                    ]
+                }
+            }
+        )
+
+        result = yahoo_trending.fetch_yahoo_trend_ranks(
+            ["IBM", "AAPL", "MSFT"], metric_date="2026-07-14"
+        )
+
+        self.assertEqual(list(result.columns), ["date", "ticker", "yahoo_trend_rank"])
+        ranks = result.set_index("ticker")["yahoo_trend_rank"].to_dict()
+        self.assertEqual(ranks["IBM"], 1)
+        self.assertEqual(ranks["AAPL"], 2)
+        self.assertTrue(pd.isna(ranks["MSFT"]))
 
     @patch("src.collectors.stock_info._fetch_single_ticker")
     def test_stock_info_normalizes_symbols_and_continues_after_failure(self, fetch_mock) -> None:

@@ -68,6 +68,42 @@ class SQLiteStoreTests(unittest.TestCase):
         self.assertEqual(result.loc[0, "close"], 100.0)
         self.assertEqual(result.loc[0, "social_mentions"], 55)
 
+    def test_yahoo_trend_rank_upsert_overwrites_null_when_ticker_drops_off_list(
+        self,
+    ) -> None:
+        market = pd.DataFrame(
+            {
+                "ticker": ["AAPL"],
+                "date": ["2026-01-02"],
+                "close": [100.0],
+                "volume": [1_000],
+                "avg_volume_30d": [900],
+                "price_change_pct": [1.0],
+            }
+        )
+        on_list = pd.DataFrame(
+            {
+                "ticker": ["AAPL"],
+                "date": ["2026-01-02"],
+                "yahoo_trend_rank": [3],
+            }
+        )
+        off_list = pd.DataFrame(
+            {
+                "ticker": ["AAPL"],
+                "date": ["2026-01-02"],
+                "yahoo_trend_rank": [None],
+            }
+        )
+
+        self.store.upsert_daily_metrics(market)
+        self.store.upsert_yahoo_trend_ranks(on_list)
+        self.store.upsert_yahoo_trend_ranks(off_list)
+        result = self.store.get_daily_metrics("aapl")
+
+        self.assertEqual(len(result), 1)
+        self.assertIsNone(result.loc[0, "yahoo_trend_rank"])
+
     def test_attention_scores_return_ranked_company_data(self) -> None:
         earnings = pd.DataFrame(
             {

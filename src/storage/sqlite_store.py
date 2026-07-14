@@ -55,6 +55,7 @@ class SQLiteStore:
                     avg_volume_30d REAL,
                     price_change_pct REAL,
                     social_mentions INTEGER,
+                    yahoo_trend_rank INTEGER,
                     PRIMARY KEY (ticker, metric_date)
                 );
 
@@ -177,6 +178,35 @@ class SQLiteStore:
                 rows,
             )
 
+    def upsert_yahoo_trend_ranks(self, ranks: pd.DataFrame) -> None:
+        """Store Yahoo Finance trending ranks, overwriting prior values for the day.
+
+        Unlike price or mention fields, a missing rank means the ticker fell
+        off Yahoo's trending list — so ``NULL`` must replace a previous rank,
+        not be ignored by ``COALESCE``.
+        """
+        if ranks.empty:
+            return
+        self._ensure_companies(ranks["ticker"].unique())
+        rows = [
+            (
+                str(row.ticker).upper(),
+                str(_value(row, "date", _value(row, "metric_date"))),
+                _value(row, "yahoo_trend_rank"),
+            )
+            for row in ranks.itertuples(index=False)
+        ]
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO daily_metrics (ticker, metric_date, yahoo_trend_rank)
+                VALUES (?, ?, ?)
+                ON CONFLICT(ticker, metric_date) DO UPDATE SET
+                    yahoo_trend_rank = excluded.yahoo_trend_rank
+                """,
+                rows,
+            )
+
     def upsert_attention_scores(
         self, scores: pd.DataFrame, calculation_date: str
     ) -> None:
@@ -256,7 +286,7 @@ class SQLiteStore:
             params.append(end_date)
         return self._query(
             f"SELECT metric_date AS date, ticker, close, volume, avg_volume_30d, "
-            f"price_change_pct, social_mentions FROM daily_metrics "
+            f"price_change_pct, social_mentions, yahoo_trend_rank FROM daily_metrics "
             f"WHERE {' AND '.join(clauses)} ORDER BY metric_date",
             tuple(params),
         )
@@ -265,7 +295,7 @@ class SQLiteStore:
         """Return all historical daily market and social-mention metrics."""
         return self._query(
             "SELECT metric_date AS date, ticker, close, volume, avg_volume_30d, "
-            "price_change_pct, social_mentions FROM daily_metrics ORDER BY metric_date"
+            "price_change_pct, social_mentions, yahoo_trend_rank FROM daily_metrics ORDER BY metric_date"
         )
 
     def get_rankings(self) -> pd.DataFrame:
@@ -360,6 +390,10 @@ class SQLiteStore:
                     conn.execute(
                         "ALTER TABLE daily_metrics RENAME COLUMN reddit_mentions TO social_mentions"
                     )
+            if "yahoo_trend_rank" not in columns:
+                conn.execute(
+                    "ALTER TABLE daily_metrics ADD COLUMN yahoo_trend_rank INTEGER"
+                )
 
     def _ensure_companies(self, tickers: Iterable[object]) -> None:
         """Create minimal company records needed before inserting child rows."""

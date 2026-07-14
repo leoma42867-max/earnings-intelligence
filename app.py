@@ -41,11 +41,87 @@ def get_data() -> dict[str, pd.DataFrame]:
     return load_dashboard_data()
 
 
+def _render_ranked_table(
+    data: pd.DataFrame,
+    value_column: str,
+    value_label: str,
+    value_format: str,
+) -> None:
+    """Render a numbered top-10 table shared by Yahoo and StockTwits sections."""
+    display = data.head(10).copy()
+    display.insert(0, "rank", range(1, len(display) + 1))
+    st.dataframe(
+        display[
+            ["rank", "ticker", "company_name", "earnings_date", value_column]
+        ],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            value_column: st.column_config.NumberColumn(value_label, format=value_format),
+        },
+    )
+
+
+def _render_mention_chart(data: pd.DataFrame, x_column: str, x_title: str) -> None:
+    """Render a horizontal bar chart for absolute search-volume leaders."""
+    chart_data = data.head(10).sort_values(x_column)
+    max_value = chart_data[x_column].max()
+    x_max = max(max_value * 1.15, 35)
+    figure = px.bar(
+        chart_data,
+        x=x_column,
+        y="ticker",
+        orientation="h",
+        color=x_column,
+        color_continuous_scale=["#273a66", "#4f8cff", "#6ee7b7"],
+    )
+    figure.update_layout(
+        height=420,
+        margin=dict(l=0, r=0, t=10, b=0),
+        coloraxis_showscale=False,
+        paper_bgcolor="#121c31",
+        plot_bgcolor="#121c31",
+        font_color="#dbeafe",
+        xaxis_title=x_title,
+        yaxis_title="",
+        xaxis=dict(range=[0, x_max]),
+    )
+    st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
+
+
+def _render_yahoo_chart(data: pd.DataFrame) -> None:
+    """Render Yahoo trending ranks as bars (lower rank number = longer bar)."""
+    chart_data = data.head(10).copy()
+    chart_data["trend_strength"] = 101 - chart_data["current_yahoo_rank"]
+    chart_data = chart_data.sort_values("trend_strength")
+    figure = px.bar(
+        chart_data,
+        x="trend_strength",
+        y="ticker",
+        orientation="h",
+        color="trend_strength",
+        color_continuous_scale=["#273a66", "#4f8cff", "#6ee7b7"],
+    )
+    figure.update_layout(
+        height=420,
+        margin=dict(l=0, r=0, t=10, b=0),
+        coloraxis_showscale=False,
+        paper_bgcolor="#121c31",
+        plot_bgcolor="#121c31",
+        font_color="#dbeafe",
+        xaxis_title="Trend strength (#1 = highest)",
+        yaxis_title="",
+    )
+    st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
+
+
 data = get_data()
 attention = data["attention"]
 earnings = data["earnings"]
 social_growth = data["social_growth"]
 most_mentioned = data["most_mentioned"]
+most_trending_yahoo = data["most_trending_yahoo"]
+yahoo_rank_growth = data["yahoo_rank_growth"]
 
 with st.sidebar:
     st.markdown("## ◈ Earnings Intel")
@@ -74,7 +150,10 @@ with st.sidebar:
                 if entered_token and hmac.compare_digest(
                     str(entered_token), str(configured_token)
                 ):
-                    with st.spinner("Collecting earnings, prices, and StockTwits mentions..."):
+                    with st.spinner(
+                        "Collecting earnings, prices, StockTwits mentions, "
+                        "and Yahoo trending ranks..."
+                    ):
                         result = run_refresh_pipeline()
                     for message in result.messages:
                         st.write(f"- {message}")
@@ -97,111 +176,121 @@ if attention.empty:
     st.stop()
 
 next_earnings = earnings["earnings_date"].min() if not earnings.empty else "—"
+top_yahoo = (
+    most_trending_yahoo.iloc[0]
+    if not most_trending_yahoo.empty
+    else None
+)
 top_mentions_value = (
     most_mentioned["current_mentions"].max() if not most_mentioned.empty else None
 )
-metric_columns = st.columns(4)
+
+metric_columns = st.columns(5)
 metric_columns[0].metric("Tracked companies", f"{len(attention):,}")
 metric_columns[1].metric(
-    "Most searched today",
-    f"{top_mentions_value:,.0f}" if top_mentions_value is not None else "—",
+    "Top Yahoo trend",
+    f"#{int(top_yahoo['current_yahoo_rank'])}" if top_yahoo is not None else "—",
+)
+metric_columns[1].caption(
+    str(top_yahoo["ticker"]) if top_yahoo is not None else "Run a refresh to collect"
 )
 metric_columns[2].metric(
-    "Average attention score", f"{attention['attention_score'].mean():.1f}/100"
+    "Top StockTwits searches",
+    f"{top_mentions_value:,.0f}" if top_mentions_value is not None else "—",
 )
 metric_columns[2].caption(
+    str(most_mentioned.iloc[0]["ticker"])
+    if not most_mentioned.empty
+    else "Run a refresh to collect"
+)
+metric_columns[3].metric(
+    "Average attention score", f"{attention['attention_score'].mean():.1f}/100"
+)
+metric_columns[3].caption(
     "Composite 0–100 score blending 7-day search gains, volume gains, and price momentum."
 )
-metric_columns[3].metric("Next earnings", next_earnings)
+metric_columns[4].metric("Next earnings", next_earnings)
 
 st.divider()
-left, right = st.columns(2)
+st.subheader("Most searched companies")
 
-# Category 1: who is being searched/talked about the most *right now*
-# (absolute level). Separate from the growth category below, which tracks
-# who gained the most searches over the last 7 days.
-with left:
-    st.subheader("Most searched companies")
-    st.caption("Ranked by current StockTwits search volume.")
-    if most_mentioned.empty:
-        st.info("StockTwits mention data is currently unavailable. Run a refresh later.")
+yahoo_col, stocktwits_col = st.columns(2)
+
+with yahoo_col:
+    st.markdown("**Yahoo Finance**")
+    st.caption(
+        "Ranked by Yahoo Finance trending position (#1 = most searched on Yahoo). "
+        "Yahoo does not publish raw search counts; this is their official trending list."
+    )
+    if most_trending_yahoo.empty:
+        st.info("Yahoo trending data is unavailable. Run a refresh later.")
     else:
-        top_attention = most_mentioned.head(10).copy()
-        top_attention.insert(0, "rank", range(1, len(top_attention) + 1))
-        st.dataframe(
-            top_attention[
-                [
-                    "rank",
-                    "ticker",
-                    "company_name",
-                    "earnings_date",
-                    "current_mentions",
-                    "attention_score",
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "current_mentions": st.column_config.NumberColumn(
-                    "Current Searches", format="%,.0f"
-                ),
-                "attention_score": st.column_config.ProgressColumn(
-                    "Attention Score", min_value=0, max_value=100, format="%.1f"
-                ),
-            },
+        _render_ranked_table(
+            most_trending_yahoo,
+            "current_yahoo_rank",
+            "Trend Rank",
+            "%.0f",
         )
 
-with right:
-    st.subheader("Search volume leaders")
+with stocktwits_col:
+    st.markdown("**StockTwits**")
+    st.caption("Ranked by current StockTwits mention volume.")
+    if most_mentioned.empty:
+        st.info("StockTwits mention data is unavailable. Run a refresh later.")
+    else:
+        _render_ranked_table(
+            most_mentioned,
+            "current_mentions",
+            "Current Searches",
+            "%,.0f",
+        )
+
+st.subheader("Search volume leaders")
+yahoo_chart_col, stocktwits_chart_col = st.columns(2)
+
+with yahoo_chart_col:
+    st.markdown("**Yahoo Finance**")
+    st.caption("Source: Yahoo Finance US trending symbols API, refreshed daily.")
+    if most_trending_yahoo.empty:
+        st.info("Yahoo trending data is unavailable. Run a refresh later.")
+    else:
+        _render_yahoo_chart(most_trending_yahoo)
+
+with stocktwits_chart_col:
+    st.markdown("**StockTwits**")
     st.caption("Source: StockTwits public mention stream, refreshed daily.")
     if most_mentioned.empty:
-        st.info("StockTwits mention data is currently unavailable. Run a refresh later.")
+        st.info("StockTwits mention data is unavailable. Run a refresh later.")
     else:
-        chart_data = most_mentioned.head(10).sort_values("current_mentions")
-        max_searches = chart_data["current_mentions"].max()
-        # Keep the x-axis comfortably above the leader so high-volume names
-        # are not clipped; never cap the scale at ~30 when values go higher.
-        x_max = max(max_searches * 1.15, 35)
-        figure = px.bar(
-            chart_data,
-            x="current_mentions",
-            y="ticker",
-            orientation="h",
-            color="current_mentions",
-            color_continuous_scale=["#273a66", "#4f8cff", "#6ee7b7"],
-        )
-        figure.update_layout(
-            height=420,
-            margin=dict(l=0, r=0, t=10, b=0),
-            coloraxis_showscale=False,
-            paper_bgcolor="#121c31",
-            plot_bgcolor="#121c31",
-            font_color="#dbeafe",
-            xaxis_title="Searches",
-            yaxis_title="",
-            xaxis=dict(range=[0, x_max]),
-        )
-        st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
+        _render_mention_chart(most_mentioned, "current_mentions", "Searches")
 
 st.divider()
-
-# Category 2: who gained the most searches recently — separate from the
-# absolute-level "most searched" list above.
 st.subheader("Highest increase in searches")
-st.caption("Ranked by StockTwits search growth over the last 7 days.")
-if social_growth.empty:
-    st.info("StockTwits mention data is currently unavailable. Run a refresh later.")
-else:
-    display_growth = social_growth[
-        ["ticker", "company_name", "earnings_date", "social_change"]
-    ].head(10)
-    st.dataframe(
-        display_growth,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "social_change": st.column_config.NumberColumn(
-                "Searches Gained (7D)", format="%+,.0f"
-            )
-        },
-    )
+
+yahoo_growth_col, stocktwits_growth_col = st.columns(2)
+
+with yahoo_growth_col:
+    st.markdown("**Yahoo Finance**")
+    st.caption("Ranked by how many trending positions climbed over the last 7 days.")
+    if yahoo_rank_growth.empty:
+        st.info("Yahoo trending history is unavailable. Run a refresh later.")
+    else:
+        _render_ranked_table(
+            yahoo_rank_growth,
+            "yahoo_rank_change",
+            "Ranks Climbed (7D)",
+            "%+,.0f",
+        )
+
+with stocktwits_growth_col:
+    st.markdown("**StockTwits**")
+    st.caption("Ranked by StockTwits search growth over the last 7 days.")
+    if social_growth.empty:
+        st.info("StockTwits mention data is unavailable. Run a refresh later.")
+    else:
+        _render_ranked_table(
+            social_growth,
+            "social_change",
+            "Searches Gained (7D)",
+            "%+,.0f",
+        )

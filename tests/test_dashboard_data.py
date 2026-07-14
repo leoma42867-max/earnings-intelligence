@@ -4,7 +4,12 @@ import unittest
 
 import pandas as pd
 
-from src.dashboard.data import _latest_current_mentions, load_dashboard_data
+from src.dashboard.data import (
+    _latest_current_mentions,
+    _latest_yahoo_ranks,
+    _yahoo_rank_change,
+    load_dashboard_data,
+)
 
 
 class DashboardDataTests(unittest.TestCase):
@@ -60,6 +65,27 @@ class DashboardDataTests(unittest.TestCase):
 
         self.assertEqual(data["most_mentioned"]["ticker"].tolist(), ["BIG", "HOT"])
         self.assertEqual(data["social_growth"]["ticker"].tolist(), ["HOT", "BIG"])
+
+    def test_yahoo_rank_helpers_track_trending_position_changes(self) -> None:
+        metrics = pd.DataFrame(
+            {
+                "date": ["2026-07-01", "2026-07-08", "2026-07-01", "2026-07-08"],
+                "ticker": ["AAPL", "AAPL", "MSFT", "MSFT"],
+                "yahoo_trend_rank": [None, 5, 40, 20],
+            }
+        )
+
+        latest = _latest_yahoo_ranks(metrics)
+        self.assertEqual(
+            latest.set_index("ticker")["current_yahoo_rank"].to_dict(),
+            {"AAPL": 5, "MSFT": 20},
+        )
+
+        changes = _yahoo_rank_change(metrics, days=7)
+        self.assertEqual(
+            changes.set_index("ticker")["yahoo_rank_change"].to_dict(),
+            {"AAPL": 96, "MSFT": 20},
+        )
 
 
 if __name__ == "__main__":
