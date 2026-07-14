@@ -163,8 +163,10 @@ with st.sidebar:
                 else:
                     st.error("Incorrect admin token.")
 
-st.title("Earnings Intelligence")
-st.caption("Detecting unusual investor attention ahead of upcoming earnings.")
+st.title("Most Watched Upcoming Earnings")
+st.caption(
+    "Companies ranked based on investor search activity ahead of earnings reports"
+)
 
 if attention.empty:
     st.warning(
@@ -219,7 +221,6 @@ with yahoo_col:
 
 with stocktwits_col:
     st.markdown("**StockTwits**")
-    st.caption("Ranked by current StockTwits mention volume.")
     if most_mentioned.empty:
         st.info("StockTwits mention data is unavailable. Run a refresh later.")
     else:
