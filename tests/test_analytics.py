@@ -27,8 +27,12 @@ class AnalyticsTests(unittest.TestCase):
         growth = calculate_growth_metrics(self.metrics)
         apple = growth[growth["ticker"] == "AAPL"].iloc[0]
 
-        self.assertEqual(apple["social_30d_growth_pct"], 300.0)
-        self.assertEqual(apple["volume_1d_growth_pct"], 100.0)
+        # Social mentions and volume are raw count changes, not percentages:
+        # day 31 mentions (40) minus day 1 mentions (10) = 30.
+        self.assertEqual(apple["social_30d_change"], 30.0)
+        # Volume goes from 100 to 200 on the last day: a +100 unit change.
+        self.assertEqual(apple["volume_1d_change"], 100.0)
+        # Price stays a percentage: $100 -> $110 is +10%.
         self.assertEqual(apple["price_1d_growth_pct"], 10.0)
 
     def test_growth_ranking_orders_larger_momentum_first(self) -> None:

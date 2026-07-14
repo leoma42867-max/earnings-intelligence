@@ -9,11 +9,15 @@ from src.analytics.scoring import AttentionScoreConfig, calculate_attention_scor
 
 class AttentionScoringTests(unittest.TestCase):
     def setUp(self) -> None:
+        # Social mentions and volume are now raw count changes (not
+        # percentages). FULL and MIXED tie for the largest volume increase
+        # (100), so both score 100 points on that signal; NEGATIVE and
+        # MISSING see a decline/flat count and score 0.
         self.sample_growth = pd.DataFrame(
             {
                 "ticker": ["FULL", "MIXED", "NEGATIVE", "MISSING"],
-                "social_7d_growth_pct": [100, 50, -10, None],
-                "volume_7d_growth_pct": [100, 100, -20, 100],
+                "social_7d_change": [200, 100, -10, None],
+                "volume_7d_change": [100, 100, -20, 100],
                 "price_7d_growth_pct": [30, 0, -5, 30],
             }
         )
@@ -21,10 +25,11 @@ class AttentionScoringTests(unittest.TestCase):
     def test_scores_follow_version_one_weights(self) -> None:
         scored = calculate_attention_scores(self.sample_growth)
 
-        # FULL: 100 × 50% + 100 × 30% + 100 × 20% = 100.
+        # FULL has the largest social-mention increase (200), so it scores
+        # 100 on that signal: 100 × 50% + 100 × 30% + 100 × 20% = 100.
         self.assertEqual(scored.loc[scored["ticker"] == "FULL", "attention_score"].iloc[0], 100)
 
-        # MIXED: 50 × 50% + 100 × 30% + 0 × 20% = 55.
+        # MIXED: 50 (100/200 relative to FULL's 200) × 50% + 100 × 30% + 0 × 20% = 55.
         self.assertEqual(scored.loc[scored["ticker"] == "MIXED", "attention_score"].iloc[0], 55)
 
         # Negative inputs do not add attention points.

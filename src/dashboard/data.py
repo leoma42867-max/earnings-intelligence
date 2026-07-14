@@ -27,8 +27,8 @@ def load_dashboard_data() -> dict[str, pd.DataFrame]:
             "social_growth": pd.DataFrame(),
         }
 
-    social_growth = attention.dropna(subset=["social_growth_pct"]).sort_values(
-        "social_growth_pct", ascending=False
+    social_growth = attention.dropna(subset=["social_change"]).sort_values(
+        "social_change", ascending=False
     )
 
     return {

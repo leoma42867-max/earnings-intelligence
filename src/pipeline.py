@@ -72,7 +72,19 @@ def run_refresh_pipeline(database_path=DATABASE_FILE) -> PipelineResult:
         result.log("No upcoming earnings found in this refresh; rescoring existing history.")
 
     result.log("Calculating attention scores...")
+    # Scope scoring to companies with a genuinely upcoming earnings date —
+    # the same universe ``get_rankings()`` displays. Social/volume points
+    # are normalized relative to the single biggest gainer in this batch
+    # (see ``scoring._normalize_change``), so including long-departed
+    # tickers still sitting in history would let a stale one-off spike from
+    # months ago permanently suppress every current score.
+    upcoming = store.get_upcoming_earnings()
+    active_tickers = set(upcoming["ticker"]) if not upcoming.empty else set()
     all_metrics = store.get_all_daily_metrics()
+    if active_tickers:
+        all_metrics = all_metrics[all_metrics["ticker"].isin(active_tickers)]
+    else:
+        all_metrics = all_metrics.iloc[0:0]
     growth = calculate_growth_metrics(all_metrics)
 
     if growth.empty:

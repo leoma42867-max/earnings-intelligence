@@ -20,8 +20,8 @@ def main() -> None:
     if not result.rankings.empty:
         print("\nTop 5 by attention score:")
         columns = [
-            "ticker", "attention_score", "social_growth_pct",
-            "volume_growth_pct", "price_growth_pct",
+            "ticker", "attention_score", "social_change",
+            "volume_change", "price_growth_pct",
         ]
         print(result.rankings[columns].head(5).to_string())
     else:

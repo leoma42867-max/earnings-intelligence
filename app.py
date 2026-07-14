@@ -54,7 +54,7 @@ with st.sidebar:
     st.caption("Use the Company page in the sidebar for individual research.")
     st.divider()
     st.markdown("**Version 1 model**")
-    st.caption("50% StockTwits mention growth · 30% volume · 20% price momentum")
+    st.caption("50% StockTwits mentions gained · 30% volume gained · 20% price momentum")
     if st.button("Reload database", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -119,8 +119,8 @@ with left:
                 "company_name",
                 "earnings_date",
                 "attention_score",
-                "social_growth_pct",
-                "volume_growth_pct",
+                "social_change",
+                "volume_change",
                 "price_growth_pct",
             ]
         ],
@@ -130,11 +130,11 @@ with left:
             "attention_score": st.column_config.ProgressColumn(
                 "Attention Score", min_value=0, max_value=100, format="%.1f"
             ),
-            "social_growth_pct": st.column_config.NumberColumn(
-                "StockTwits Mentions Growth (7D)", format="%.1f%%"
+            "social_change": st.column_config.NumberColumn(
+                "StockTwits Mentions Gained (7D)", format="%+,.0f"
             ),
-            "volume_growth_pct": st.column_config.NumberColumn(
-                "Volume Growth (7D)", format="%.1f%%"
+            "volume_change": st.column_config.NumberColumn(
+                "Volume Gained (7D)", format="%+,.0f"
             ),
             "price_growth_pct": st.column_config.NumberColumn(
                 "Price Momentum (7D)", format="%.1f%%"
@@ -189,20 +189,20 @@ with upcoming_col:
         )
 
 with growth_col:
-    st.subheader("StockTwits mention growth rankings")
+    st.subheader("StockTwits mentions gained")
     if social_growth.empty:
         st.info("StockTwits mention data is currently unavailable. Run a refresh later.")
     else:
         display_growth = social_growth[
-            ["ticker", "company_name", "social_growth_pct"]
+            ["ticker", "company_name", "social_change"]
         ].head(10)
         st.dataframe(
             display_growth,
             use_container_width=True,
             hide_index=True,
             column_config={
-                "social_growth_pct": st.column_config.NumberColumn(
-                    "StockTwits Mentions Growth (7D)", format="%.1f%%"
+                "social_change": st.column_config.NumberColumn(
+                    "StockTwits Mentions Gained (7D)", format="%+,.0f"
                 )
             },
         )

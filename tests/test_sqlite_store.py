@@ -85,8 +85,8 @@ class SQLiteStoreTests(unittest.TestCase):
             {
                 "ticker": ["AAPL", "MSFT"],
                 "attention_score": [68.0, 5.0],
-                "social_growth_pct": [100.0, 0.0],
-                "volume_growth_pct": [20.0, 10.0],
+                "social_change": [450.0, 0.0],
+                "volume_change": [2_000_000.0, 500_000.0],
                 "price_growth_pct": [5.0, 1.0],
                 "social_points": [100.0, 0.0],
                 "volume_points": [20.0, 10.0],
@@ -100,7 +100,7 @@ class SQLiteStoreTests(unittest.TestCase):
 
         self.assertEqual(result["ticker"].tolist(), ["AAPL", "MSFT"])
         self.assertEqual(result.iloc[0]["attention_score"], 68.0)
-        self.assertEqual(result.iloc[0]["social_growth_pct"], 100.0)
+        self.assertEqual(result.iloc[0]["social_change"], 450.0)
 
     def test_stored_scores_match_scoring_module_output(self) -> None:
         """Guard against the pipeline/dashboard scoring split regressing."""
@@ -121,8 +121,8 @@ class SQLiteStoreTests(unittest.TestCase):
         growth = pd.DataFrame(
             {
                 "ticker": ["AAPL", "MSFT"],
-                "social_7d_growth_pct": [100.0, 20.0],
-                "volume_7d_growth_pct": [50.0, 80.0],
+                "social_7d_change": [450.0, 100.0],
+                "volume_7d_change": [2_000_000.0, 8_000_000.0],
                 "price_7d_growth_pct": [30.0, 5.0],
             }
         )
@@ -137,6 +137,72 @@ class SQLiteStoreTests(unittest.TestCase):
 
         for ticker in expected.index:
             self.assertAlmostEqual(stored[ticker], expected[ticker], places=2)
+
+    def test_legacy_social_growth_pct_column_is_migrated_without_data_loss(self) -> None:
+        """A database using the pre-absolute-change schema should upgrade in place.
+
+        This covers the most recent migration: social/volume ranking moved
+        from a percentage (``social_growth_pct``/``volume_growth_pct``) to a
+        raw count increase (``social_change``/``volume_change``).
+        """
+        self.temp_directory.cleanup()
+        self.temp_directory = TemporaryDirectory()
+        db_path = Path(self.temp_directory.name) / "legacy_pct.db"
+
+        with sqlite3.connect(db_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE companies (
+                    ticker TEXT PRIMARY KEY,
+                    company_name TEXT NOT NULL,
+                    sector TEXT,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE daily_metrics (
+                    ticker TEXT NOT NULL REFERENCES companies(ticker),
+                    metric_date TEXT NOT NULL,
+                    close REAL,
+                    volume INTEGER,
+                    avg_volume_30d REAL,
+                    price_change_pct REAL,
+                    social_mentions INTEGER,
+                    PRIMARY KEY (ticker, metric_date)
+                );
+                CREATE TABLE attention_scores (
+                    ticker TEXT NOT NULL REFERENCES companies(ticker),
+                    calculation_date TEXT NOT NULL,
+                    attention_score REAL NOT NULL,
+                    social_growth_pct REAL,
+                    volume_growth_pct REAL,
+                    price_growth_pct REAL,
+                    social_points REAL,
+                    volume_points REAL,
+                    price_points REAL,
+                    PRIMARY KEY (ticker, calculation_date)
+                );
+                """
+            )
+            conn.execute(
+                "INSERT INTO companies (ticker, company_name) VALUES ('AAPL', 'Apple Inc.')"
+            )
+            conn.execute(
+                "INSERT INTO daily_metrics "
+                "(ticker, metric_date, close, volume, avg_volume_30d, price_change_pct, social_mentions) "
+                "VALUES ('AAPL', '2026-01-02', 100.0, 1000, 900, 1.0, 42)"
+            )
+
+        migrated_store = SQLiteStore(db_path)
+        metrics = migrated_store.get_daily_metrics("AAPL")
+
+        self.assertEqual(len(metrics), 1)
+        self.assertEqual(metrics.loc[0, "social_mentions"], 42)
+
+        with sqlite3.connect(db_path) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(attention_scores)")}
+        self.assertIn("social_change", columns)
+        self.assertIn("volume_change", columns)
+        self.assertNotIn("social_growth_pct", columns)
+        self.assertNotIn("volume_growth_pct", columns)
 
     def test_rankings_exclude_companies_without_upcoming_earnings(self) -> None:
         """A ticker whose earnings date has passed should drop out of rankings."""
@@ -156,8 +222,8 @@ class SQLiteStoreTests(unittest.TestCase):
             {
                 "ticker": ["AAPL", "STALE"],
                 "attention_score": [50.0, 90.0],
-                "social_growth_pct": [50.0, 90.0],
-                "volume_growth_pct": [50.0, 90.0],
+                "social_change": [50.0, 90.0],
+                "volume_change": [50.0, 90.0],
                 "price_growth_pct": [50.0, 90.0],
                 "social_points": [50.0, 90.0],
                 "volume_points": [50.0, 90.0],
@@ -228,7 +294,7 @@ class SQLiteStoreTests(unittest.TestCase):
 
         with sqlite3.connect(db_path) as conn:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(attention_scores)")}
-        self.assertIn("social_growth_pct", columns)
+        self.assertIn("social_change", columns)
         self.assertNotIn("trends_growth_pct", columns)
 
     def test_legacy_reddit_mentions_column_is_migrated_without_data_loss(self) -> None:
@@ -287,7 +353,7 @@ class SQLiteStoreTests(unittest.TestCase):
 
         with sqlite3.connect(db_path) as conn:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(attention_scores)")}
-        self.assertIn("social_growth_pct", columns)
+        self.assertIn("social_change", columns)
         self.assertNotIn("reddit_growth_pct", columns)
 
 

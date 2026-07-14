@@ -62,8 +62,8 @@ class SQLiteStore:
                     ticker TEXT NOT NULL REFERENCES companies(ticker),
                     calculation_date TEXT NOT NULL,
                     attention_score REAL NOT NULL,
-                    social_growth_pct REAL,
-                    volume_growth_pct REAL,
+                    social_change REAL,
+                    volume_change REAL,
                     price_growth_pct REAL,
                     social_points REAL,
                     volume_points REAL,
@@ -193,8 +193,8 @@ class SQLiteStore:
                 str(row.ticker).upper(),
                 calculation_date,
                 float(row.attention_score),
-                _value(row, "social_growth_pct"),
-                _value(row, "volume_growth_pct"),
+                _value(row, "social_change"),
+                _value(row, "volume_change"),
                 _value(row, "price_growth_pct"),
                 _value(row, "social_points"),
                 _value(row, "volume_points"),
@@ -207,13 +207,13 @@ class SQLiteStore:
                 """
                 INSERT INTO attention_scores (
                     ticker, calculation_date, attention_score,
-                    social_growth_pct, volume_growth_pct, price_growth_pct,
+                    social_change, volume_change, price_growth_pct,
                     social_points, volume_points, price_points
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ticker, calculation_date) DO UPDATE SET
                     attention_score = excluded.attention_score,
-                    social_growth_pct = excluded.social_growth_pct,
-                    volume_growth_pct = excluded.volume_growth_pct,
+                    social_change = excluded.social_change,
+                    volume_change = excluded.volume_change,
                     price_growth_pct = excluded.price_growth_pct,
                     social_points = excluded.social_points,
                     volume_points = excluded.volume_points,
@@ -294,7 +294,7 @@ class SQLiteStore:
             )
             SELECT a.ticker, c.company_name, c.sector, e.earnings_date,
                    e.estimated_eps, e.estimated_revenue,
-                   a.attention_score, a.social_growth_pct, a.volume_growth_pct,
+                   a.attention_score, a.social_change, a.volume_change,
                    a.price_growth_pct, a.social_points, a.volume_points,
                    a.price_points, a.calculation_date
             FROM latest_scores l
@@ -315,9 +315,11 @@ class SQLiteStore:
         (``trend_score`` / ``trends_growth_pct`` / ``trends_points``), then
         briefly Reddit (``reddit_mentions`` / ``reddit_growth_pct`` /
         ``reddit_points``), and now StockTwits, stored generically as
-        ``social_mentions`` / ``social_growth_pct`` / ``social_points`` so a
-        future source change never requires another schema migration. An
-        even older version stored a 60/40 ``composite_score``.
+        ``social_mentions``. The social/volume ranking signal itself later
+        changed from a percentage (``social_growth_pct`` / ``volume_growth_pct``)
+        to a raw count increase (``social_change`` / ``volume_change``), since
+        percentage growth off a tiny base was drowning out genuinely large
+        gains. An even older version stored a 60/40 ``composite_score``.
 
         ``attention_scores`` is always safe to rebuild from scratch (it is
         fully recomputed from ``daily_metrics`` on every refresh).
@@ -331,9 +333,14 @@ class SQLiteStore:
             columns = {
                 row[1] for row in conn.execute("PRAGMA table_info(attention_scores)")
             }
-            legacy_growth_columns = {"trends_growth_pct", "reddit_growth_pct"}
+            legacy_growth_columns = {
+                "trends_growth_pct",
+                "reddit_growth_pct",
+                "social_growth_pct",
+                "volume_growth_pct",
+            }
             if "composite_score" in columns or (
-                columns & legacy_growth_columns and "social_growth_pct" not in columns
+                columns & legacy_growth_columns and "social_change" not in columns
             ):
                 conn.execute("DROP TABLE attention_scores")
 

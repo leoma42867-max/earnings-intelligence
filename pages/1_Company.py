@@ -148,7 +148,7 @@ with gauge_col:
     )
     st.plotly_chart(gauge, use_container_width=True, config={"displayModeBar": False})
 
-    st.caption("50% StockTwits mention growth · 30% volume growth · 20% price momentum")
+    st.caption("50% StockTwits mentions gained · 30% volume gained · 20% price momentum")
     st.metric("Est. EPS", _format_value(earnings.get("estimated_eps"), "$%.2f"))
     st.metric("Est. revenue", format_market_cap(earnings.get("estimated_revenue")))
 
