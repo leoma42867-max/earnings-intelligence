@@ -25,7 +25,18 @@ def load_dashboard_data() -> dict[str, pd.DataFrame]:
             "metrics": metrics,
             "attention": pd.DataFrame(),
             "social_growth": pd.DataFrame(),
+            "most_mentioned": pd.DataFrame(),
         }
+
+    # Two separate dashboard categories:
+    # - ``most_mentioned``: highest *current* StockTwits search volume
+    # - ``social_growth``: largest *increase* in searches over 7 days
+    attention = attention.merge(
+        _latest_current_mentions(metrics), on="ticker", how="left"
+    )
+    most_mentioned = attention.dropna(subset=["current_mentions"]).sort_values(
+        "current_mentions", ascending=False
+    )
 
     social_growth = attention.dropna(subset=["social_change"]).sort_values(
         "social_change", ascending=False
@@ -36,7 +47,23 @@ def load_dashboard_data() -> dict[str, pd.DataFrame]:
         "metrics": metrics,
         "attention": attention,
         "social_growth": social_growth,
+        "most_mentioned": most_mentioned,
     }
+
+
+def _latest_current_mentions(metrics: pd.DataFrame) -> pd.DataFrame:
+    """Return each ticker's most recently available StockTwits mention count."""
+    if metrics.empty or "social_mentions" not in metrics.columns:
+        return pd.DataFrame(columns=["ticker", "current_mentions"])
+
+    mentions = metrics.dropna(subset=["social_mentions"]).sort_values("date")
+    if mentions.empty:
+        return pd.DataFrame(columns=["ticker", "current_mentions"])
+
+    latest = mentions.groupby("ticker", as_index=False).last()[
+        ["ticker", "social_mentions"]
+    ]
+    return latest.rename(columns={"social_mentions": "current_mentions"})
 
 
 def get_company_data(ticker: str) -> dict[str, object]:

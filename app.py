@@ -45,6 +45,7 @@ data = get_data()
 attention = data["attention"]
 earnings = data["earnings"]
 social_growth = data["social_growth"]
+most_mentioned = data["most_mentioned"]
 
 with st.sidebar:
     st.markdown("## ◈ Earnings Intel")
@@ -96,75 +97,82 @@ if attention.empty:
     st.stop()
 
 next_earnings = earnings["earnings_date"].min() if not earnings.empty else "—"
+top_mentions_value = (
+    most_mentioned["current_mentions"].max() if not most_mentioned.empty else None
+)
 metric_columns = st.columns(4)
 metric_columns[0].metric("Tracked companies", f"{len(attention):,}")
-metric_columns[1].metric("Top attention score", f"{attention['attention_score'].max():.1f}/100")
+metric_columns[1].metric(
+    "Most searched today",
+    f"{top_mentions_value:,.0f}" if top_mentions_value is not None else "—",
+)
 metric_columns[2].metric(
-    "Average attention", f"{attention['attention_score'].mean():.1f}/100"
+    "Average attention score", f"{attention['attention_score'].mean():.1f}/100"
 )
 metric_columns[3].metric("Next earnings", next_earnings)
 
 st.divider()
 left, right = st.columns([1.35, 1])
 
+# Category 1: who is being searched/talked about the most *right now*
+# (absolute level). Separate from the growth category below, which tracks
+# who gained the most searches over the last 7 days.
 with left:
-    st.subheader("Top attention-ranked companies")
-    top_attention = attention.head(10).copy()
-    top_attention.insert(0, "rank", range(1, len(top_attention) + 1))
-    st.dataframe(
-        top_attention[
-            [
-                "rank",
-                "ticker",
-                "company_name",
-                "earnings_date",
-                "attention_score",
-                "social_change",
-                "volume_change",
-                "price_growth_pct",
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "attention_score": st.column_config.ProgressColumn(
-                "Attention Score", min_value=0, max_value=100, format="%.1f"
-            ),
-            "social_change": st.column_config.NumberColumn(
-                "StockTwits Mentions Gained (7D)", format="%+,.0f"
-            ),
-            "volume_change": st.column_config.NumberColumn(
-                "Volume Gained (7D)", format="%+,.0f"
-            ),
-            "price_growth_pct": st.column_config.NumberColumn(
-                "Price Momentum (7D)", format="%.1f%%"
-            ),
-        },
-    )
+    st.subheader("Most searched companies")
+    st.caption("Ranked by current StockTwits search volume.")
+    if most_mentioned.empty:
+        st.info("StockTwits mention data is currently unavailable. Run a refresh later.")
+    else:
+        top_attention = most_mentioned.head(10).copy()
+        top_attention.insert(0, "rank", range(1, len(top_attention) + 1))
+        st.dataframe(
+            top_attention[
+                [
+                    "rank",
+                    "ticker",
+                    "company_name",
+                    "earnings_date",
+                    "current_mentions",
+                    "attention_score",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "current_mentions": st.column_config.NumberColumn(
+                    "Current Searches", format="%,.0f"
+                ),
+                "attention_score": st.column_config.ProgressColumn(
+                    "Attention Score", min_value=0, max_value=100, format="%.1f"
+                ),
+            },
+        )
 
 with right:
-    st.subheader("Attention leaders")
-    chart_data = top_attention.sort_values("attention_score")
-    figure = px.bar(
-        chart_data,
-        x="attention_score",
-        y="ticker",
-        orientation="h",
-        color="attention_score",
-        color_continuous_scale=["#273a66", "#4f8cff", "#6ee7b7"],
-        range_color=[0, 100],
-    )
-    figure.update_layout(
-        height=355,
-        margin=dict(l=0, r=0, t=10, b=0),
-        coloraxis_showscale=False,
-        paper_bgcolor="#121c31",
-        plot_bgcolor="#121c31",
-        font_color="#dbeafe",
-        xaxis_title="Score",
-        yaxis_title="",
-    )
-    st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
+    st.subheader("Search volume leaders")
+    if most_mentioned.empty:
+        st.info("StockTwits mention data is currently unavailable. Run a refresh later.")
+    else:
+        chart_data = most_mentioned.head(10).sort_values("current_mentions")
+        figure = px.bar(
+            chart_data,
+            x="current_mentions",
+            y="ticker",
+            orientation="h",
+            color="current_mentions",
+            color_continuous_scale=["#273a66", "#4f8cff", "#6ee7b7"],
+        )
+        figure.update_layout(
+            height=355,
+            margin=dict(l=0, r=0, t=10, b=0),
+            coloraxis_showscale=False,
+            paper_bgcolor="#121c31",
+            plot_bgcolor="#121c31",
+            font_color="#dbeafe",
+            xaxis_title="Searches",
+            yaxis_title="",
+        )
+        st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
 
 st.divider()
 upcoming_col, growth_col = st.columns(2)
@@ -188,13 +196,17 @@ with upcoming_col:
             },
         )
 
+# Category 2: who gained the most searches recently — separate from the
+# absolute-level "most searched" list above. A company can be climbing
+# quickly off a small base without yet cracking the top-search list.
 with growth_col:
-    st.subheader("StockTwits mentions gained")
+    st.subheader("Highest increase in searches")
+    st.caption("Ranked by StockTwits search growth over the last 7 days.")
     if social_growth.empty:
         st.info("StockTwits mention data is currently unavailable. Run a refresh later.")
     else:
         display_growth = social_growth[
-            ["ticker", "company_name", "social_change"]
+            ["ticker", "company_name", "earnings_date", "social_change"]
         ].head(10)
         st.dataframe(
             display_growth,
@@ -202,7 +214,7 @@ with growth_col:
             hide_index=True,
             column_config={
                 "social_change": st.column_config.NumberColumn(
-                    "StockTwits Mentions Gained (7D)", format="%+,.0f"
+                    "Searches Gained (7D)", format="%+,.0f"
                 )
             },
         )

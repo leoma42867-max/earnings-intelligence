@@ -50,6 +50,9 @@ st.markdown(
 def get_company_list() -> list[str]:
     """Return researchable tickers from the current database snapshot."""
     data = load_dashboard_data()
+    most_mentioned = data["most_mentioned"]
+    if not most_mentioned.empty and "ticker" in most_mentioned.columns:
+        return most_mentioned["ticker"].tolist()
     attention = data["attention"]
     if attention.empty or "ticker" not in attention.columns:
         return []
