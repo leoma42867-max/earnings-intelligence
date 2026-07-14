@@ -1,15 +1,13 @@
 """Earnings Intelligence Platform — Streamlit homepage."""
 
 import hmac
-from collections.abc import Callable
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from config.secrets import get_setting
-from src.dashboard.charts import render_linked_bar_chart
 from src.dashboard.data import load_dashboard_data
-from src.dashboard.links import stocktwits_ticker_url, yahoo_ticker_url
 from src.pipeline import run_refresh_pipeline
 
 
@@ -48,42 +46,73 @@ def _render_ranked_table(
     value_column: str,
     value_label: str,
     value_format: str,
-    ticker_url: Callable[[str], str],
 ) -> None:
-    """Render a numbered top-10 table with clickable ticker links."""
+    """Render a numbered top-10 table shared by Yahoo and StockTwits sections."""
     display = data.head(10).copy()
     display.insert(0, "rank", range(1, len(display) + 1))
-    display["ticker_link"] = display["ticker"].map(ticker_url)
     st.dataframe(
-        display,
+        display[
+            ["rank", "ticker", "company_name", "earnings_date", value_column]
+        ],
         use_container_width=True,
         hide_index=True,
-        column_order=(
-            "rank",
-            "ticker_link",
-            "company_name",
-            "earnings_date",
-            value_column,
-        ),
         column_config={
-            "ticker_link": st.column_config.LinkColumn(
-                "Ticker", display_text="ticker"
-            ),
             value_column: st.column_config.NumberColumn(value_label, format=value_format),
         },
     )
 
 
+def _render_mention_chart(data: pd.DataFrame, x_column: str, x_title: str) -> None:
+    """Render a horizontal bar chart for absolute search-volume leaders."""
+    chart_data = data.head(10).sort_values(x_column)
+    max_value = chart_data[x_column].max()
+    x_max = max(max_value * 1.15, 35)
+    figure = px.bar(
+        chart_data,
+        x=x_column,
+        y="ticker",
+        orientation="h",
+        color=x_column,
+        color_continuous_scale=["#273a66", "#4f8cff", "#6ee7b7"],
+    )
+    figure.update_layout(
+        height=420,
+        margin=dict(l=0, r=0, t=10, b=0),
+        coloraxis_showscale=False,
+        paper_bgcolor="#121c31",
+        plot_bgcolor="#121c31",
+        font_color="#dbeafe",
+        xaxis_title=x_title,
+        yaxis_title="",
+        xaxis=dict(range=[0, x_max]),
+    )
+    st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
+
+
 def _render_yahoo_chart(data: pd.DataFrame) -> None:
-    """Render Yahoo trending ranks as bars with linked ticker labels."""
+    """Render Yahoo trending ranks as bars (lower rank number = longer bar)."""
     chart_data = data.head(10).copy()
     chart_data["trend_strength"] = 101 - chart_data["current_yahoo_rank"]
-    render_linked_bar_chart(
+    chart_data = chart_data.sort_values("trend_strength")
+    figure = px.bar(
         chart_data,
-        x_column="trend_strength",
-        x_title="Trend strength (#1 = highest)",
-        ticker_url=yahoo_ticker_url,
+        x="trend_strength",
+        y="ticker",
+        orientation="h",
+        color="trend_strength",
+        color_continuous_scale=["#273a66", "#4f8cff", "#6ee7b7"],
     )
+    figure.update_layout(
+        height=420,
+        margin=dict(l=0, r=0, t=10, b=0),
+        coloraxis_showscale=False,
+        paper_bgcolor="#121c31",
+        plot_bgcolor="#121c31",
+        font_color="#dbeafe",
+        xaxis_title="Trend strength (#1 = highest)",
+        yaxis_title="",
+    )
+    st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
 
 
 data = get_data()
@@ -201,7 +230,6 @@ with yahoo_col:
             "current_yahoo_rank",
             "Trend Rank",
             "%.0f",
-            yahoo_ticker_url,
         )
 
 with stocktwits_col:
@@ -215,7 +243,6 @@ with stocktwits_col:
             "current_mentions",
             "Current Searches",
             "%,.0f",
-            stocktwits_ticker_url,
         )
 
 st.subheader("Search volume leaders")
@@ -235,12 +262,7 @@ with stocktwits_chart_col:
     if most_mentioned.empty:
         st.info("StockTwits mention data is unavailable. Run a refresh later.")
     else:
-        render_linked_bar_chart(
-            most_mentioned,
-            x_column="current_mentions",
-            x_title="Searches",
-            ticker_url=stocktwits_ticker_url,
-        )
+        _render_mention_chart(most_mentioned, "current_mentions", "Searches")
 
 st.divider()
 st.subheader("Highest increase in searches")
@@ -258,7 +280,6 @@ with yahoo_growth_col:
             "yahoo_rank_change",
             "Ranks Climbed (7D)",
             "%+,.0f",
-            yahoo_ticker_url,
         )
 
 with stocktwits_growth_col:
@@ -272,5 +293,4 @@ with stocktwits_growth_col:
             "social_change",
             "Searches Gained (7D)",
             "%+,.0f",
-            stocktwits_ticker_url,
         )
