@@ -70,7 +70,9 @@ with st.sidebar:
         else:
             entered_token = st.text_input("Admin token", type="password")
             if st.button("Run full refresh now", use_container_width=True):
-                if entered_token and hmac.compare_digest(entered_token, configured_token):
+                if entered_token and hmac.compare_digest(
+                    str(entered_token), str(configured_token)
+                ):
                     with st.spinner("Collecting earnings, prices, and trends..."):
                         result = run_refresh_pipeline()
                     for message in result.messages:
