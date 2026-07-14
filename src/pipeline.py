@@ -13,12 +13,13 @@ from datetime import date
 
 import pandas as pd
 
-from config.settings import DATABASE_FILE
+from config.settings import DATABASE_FILE, TICKER_UNIVERSE_SIZE
 from src.analytics.growth_ranking import calculate_growth_metrics
 from src.analytics.scoring import calculate_attention_scores
 from src.collectors.earnings_calendar import fetch_upcoming_earnings
 from src.collectors.market_data import fetch_market_data
 from src.collectors.social_mentions import fetch_social_mentions
+from src.collectors.ticker_universe import fetch_hyped_tickers
 from src.storage.sqlite_store import SQLiteStore
 
 
@@ -44,8 +45,12 @@ def run_refresh_pipeline(database_path=DATABASE_FILE) -> PipelineResult:
     result = PipelineResult()
     store = SQLiteStore(database_path)
 
+    result.log(f"Finding today's top {TICKER_UNIVERSE_SIZE} most-hyped tickers...")
+    universe = fetch_hyped_tickers(TICKER_UNIVERSE_SIZE)
+    result.log(f"Candidate universe: {len(universe)} tickers.")
+
     result.log("Fetching upcoming earnings...")
-    earnings = fetch_upcoming_earnings()
+    earnings = fetch_upcoming_earnings(universe)
     if not earnings.empty:
         tickers = earnings["ticker"].tolist()
         result.tickers_found = len(tickers)

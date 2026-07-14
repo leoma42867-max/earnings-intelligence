@@ -8,7 +8,13 @@ import unittest
 
 import pandas as pd
 
-from src.collectors import earnings_calendar, market_data, social_mentions, stock_info
+from src.collectors import (
+    earnings_calendar,
+    market_data,
+    social_mentions,
+    stock_info,
+    ticker_universe,
+)
 
 
 class StubEarningsProvider:
@@ -164,6 +170,45 @@ class CollectorTests(unittest.TestCase):
     def test_daily_change_handles_zero_previous_close(self) -> None:
         self.assertEqual(stock_info._calculate_daily_change(100, 0), 0.0)
         self.assertEqual(stock_info._calculate_daily_change(110, 100), 10.0)
+
+    @patch("src.collectors.ticker_universe.yf.screen")
+    @patch("src.collectors.ticker_universe.requests.get")
+    def test_hyped_tickers_merges_and_dedupes_both_sources(
+        self, get_mock, screen_mock
+    ) -> None:
+        get_mock.return_value = FakeStockTwitsResponse(
+            {
+                "symbols": [
+                    {"symbol": "IBM", "instrument_class": "Stock"},
+                    {"symbol": "ORCL", "instrument_class": "Stock"},
+                    {"symbol": "ETH.X", "instrument_class": "Crypto"},
+                ]
+            }
+        )
+        screen_mock.return_value = {
+            "quotes": [
+                {"symbol": "ORCL", "quoteType": "EQUITY"},
+                {"symbol": "SOFI", "quoteType": "EQUITY"},
+                {"symbol": "DIA", "quoteType": "ETF"},
+                {"symbol": "PLTR", "quoteType": "EQUITY"},
+            ]
+        }
+
+        result = ticker_universe.fetch_hyped_tickers(limit=4)
+
+        self.assertEqual(result, ["IBM", "ORCL", "SOFI", "PLTR"])
+
+    @patch("src.collectors.ticker_universe.yf.screen")
+    @patch("src.collectors.ticker_universe.requests.get")
+    def test_hyped_tickers_falls_back_when_both_sources_fail(
+        self, get_mock, screen_mock
+    ) -> None:
+        get_mock.side_effect = RuntimeError("network unavailable")
+        screen_mock.side_effect = RuntimeError("network unavailable")
+
+        result = ticker_universe.fetch_hyped_tickers(limit=10)
+
+        self.assertEqual(result, ticker_universe.FALLBACK_TICKERS)
 
 
 if __name__ == "__main__":

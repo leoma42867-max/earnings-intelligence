@@ -2,12 +2,13 @@
 
 The daily pipeline performs this sequence:
 
-1. Updates the upcoming earnings calendar
-2. Downloads daily stock-price and volume data
-3. Counts StockTwits mentions per ticker (free, public API — no signup needed)
-4. Stores collected history in `data/earnings_intelligence.db`
-5. Calculates attention metrics and rankings
-6. Makes the refreshed SQLite data available to the Streamlit dashboard
+1. Builds a ~100-ticker "most hyped" candidate list (StockTwits trending + Yahoo Finance most-actives)
+2. Updates the upcoming earnings calendar for those candidates
+3. Downloads daily stock-price and volume data
+4. Counts StockTwits mentions per ticker (free, public API — no signup needed)
+5. Stores collected history in `data/earnings_intelligence.db`
+6. Calculates attention metrics and rankings
+7. Makes the refreshed SQLite data available to the Streamlit dashboard
 
 ## Run It Manually
 

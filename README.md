@@ -19,12 +19,13 @@ streamlit run app.py
 
 ## How It Works
 
-1. **Earnings Calendar** — Finds companies reporting earnings in the next 30 days
-2. **Market Data** — Collects daily price and volume from Yahoo Finance
-3. **StockTwits Mentions** — Counts daily ticker mentions on StockTwits (free, no API key)
-4. **Attention Growth** — Compares recent vs prior mentions and volume
-5. **Ranking** — Scores and ranks companies by composite attention signal
-6. **Dashboard** — Displays results in an interactive Streamlit UI
+1. **Ticker Universe** — Builds a fresh list of ~100 tickers currently getting attention, combining StockTwits' trending symbols with Yahoo Finance's most-actively-traded stocks
+2. **Earnings Calendar** — Filters that list down to companies reporting earnings in the next 30 days
+3. **Market Data** — Collects daily price and volume from Yahoo Finance
+4. **StockTwits Mentions** — Counts daily ticker mentions on StockTwits (free, no API key)
+5. **Attention Growth** — Compares recent vs prior mentions and volume
+6. **Ranking** — Scores and ranks companies by composite attention signal
+7. **Dashboard** — Displays results in an interactive Streamlit UI
 
 ## Project Structure
 
@@ -43,6 +44,7 @@ earnings-intelligence/
 │
 ├── src/
 │   ├── collectors/                 # Data fetching modules
+│   │   ├── ticker_universe.py    # Dynamic ~100-ticker "most hyped" candidate list
 │   │   ├── earnings_calendar.py  # Upcoming earnings from Yahoo Finance
 │   │   ├── market_data.py        # Stock price and volume data
 │   │   └── social_mentions.py    # Daily StockTwits ticker-mention counts
@@ -68,7 +70,8 @@ earnings-intelligence/
 | `app.py` | Streamlit frontend — loads rankings and renders the dashboard with summary metrics, ranked table, and per-company charts |
 | `requirements.txt` | Pinned Python package dependencies |
 | `config/settings.py` | Central configuration: directory paths, database location, and analysis parameters |
-| `src/collectors/earnings_calendar.py` | Queries Yahoo Finance for companies with earnings in the next 30 days |
+| `src/collectors/ticker_universe.py` | Builds the ~100-ticker candidate pool from StockTwits trending symbols + Yahoo Finance's most-actively-traded stocks |
+| `src/collectors/earnings_calendar.py` | Given a list of tickers, finds which are reporting earnings in the next 30 days |
 | `src/collectors/market_data.py` | Downloads daily OHLCV data and computes volume averages |
 | `src/collectors/social_mentions.py` | Counts daily ticker mentions via StockTwits' free, public API (no credentials needed) |
 | `src/storage/sqlite_store.py` | Creates SQLite tables and provides insert/query functions for all platform data |
@@ -95,9 +98,10 @@ adjustable via `AttentionScoreConfig`.
 ## V1 Limitations
 
 - SQLite storage is local-only; it is not intended for concurrent or hosted multi-user access
-- Fixed watchlist of ~30 large-cap tickers
+- The ~100-ticker candidate pool is refreshed each run from StockTwits' trending list (always ~30 symbols) plus Yahoo Finance's most-actives screener; if both are briefly unavailable, the pipeline falls back to a small static watchlist for that run rather than collecting nothing
 - StockTwits' public stream only returns each symbol's ~30 most recent messages (no arbitrary date-range search), so very heavily discussed tickers can have their daily mention count saturate at that cap
 - No credentials are required for the social-mentions signal — it uses a free, public, unauthenticated StockTwits endpoint
+- A full refresh now takes roughly 1–2 minutes (up from ~30–60 seconds) since it checks ~100 candidate tickers for upcoming earnings instead of a fixed ~30
 - Scheduling is optional and runs locally (see [AUTOMATION.md](AUTOMATION.md))
 
 ## License

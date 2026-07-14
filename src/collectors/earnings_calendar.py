@@ -157,7 +157,13 @@ def _number_or_none(value: object) -> float | None:
 
 
 def _default_watchlist() -> list[str]:
-    """Starter watchlist of large-cap tickers for V1."""
+    """Small static fallback list used only when no tickers are supplied.
+
+    The live pipeline (``src.pipeline``) always passes its own dynamic
+    ~100-ticker "most hyped" candidate list from
+    ``src.collectors.ticker_universe``, so this only matters for direct,
+    standalone use of this module.
+    """
     return [
         "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
         "JPM", "V", "UNH", "JNJ", "WMT", "PG", "MA", "HD",

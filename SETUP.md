@@ -123,11 +123,12 @@ python scripts/refresh_data.py
 ```
 
 **What this does:**
-1. Finds companies with earnings in the next 30 days
-2. Downloads stock prices and trading volume
-3. Counts StockTwits mentions per ticker (free, public API — no signup needed)
-4. Calculates attention growth and rankings
-5. Saves everything to the local SQLite database in the `data/` folder
+1. Builds a list of ~100 tickers currently getting attention (StockTwits trending + Yahoo Finance most-actives)
+2. Finds which of those have earnings in the next 30 days
+3. Downloads stock prices and trading volume
+4. Counts StockTwits mentions per ticker (free, public API — no signup needed)
+5. Calculates attention growth and rankings
+6. Saves everything to the local SQLite database in the `data/` folder
 
 This takes 2–5 minutes depending on your internet speed. Re-run this whenever you want fresh data.
 

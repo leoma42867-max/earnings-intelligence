@@ -212,8 +212,9 @@ placeholder value) is tracked, so collaborators know which keys to set.
    the database was refreshed and pushed — no manual step needed on a fresh
    deploy.
 3. If you want fresher numbers right now, open **Admin: refresh data** in the
-   sidebar, enter your token, and click **Run full refresh now** (~30–60
-   seconds — it's fetching live data from Yahoo Finance and StockTwits).
+   sidebar, enter your token, and click **Run full refresh now** (~1–2
+   minutes — it's fetching live data for ~100 candidate tickers from Yahoo
+   Finance and StockTwits).
    Remember this in-app refresh does not persist past the next redeploy or
    sleep cycle (see "Important limitation" above) — for a lasting update,
    refresh and push locally, or rely on the daily GitHub Actions workflow.
