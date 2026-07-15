@@ -130,6 +130,8 @@ social_growth = data["social_growth"]
 most_mentioned = data["most_mentioned"]
 most_trending_yahoo = data["most_trending_yahoo"]
 yahoo_rank_growth = data["yahoo_rank_growth"]
+yahoo_rank_drop = data["yahoo_rank_drop"]
+social_drop = data["social_drop"]
 
 with st.sidebar:
     st.markdown("## ◈ Earnings Intel")
@@ -270,7 +272,7 @@ with yahoo_growth_col:
     st.markdown("**Yahoo Finance**")
     st.caption("Ranked by how many trending positions climbed over the last 7 days.")
     if yahoo_rank_growth.empty:
-        st.info("Yahoo trending history is unavailable. Run a refresh later.")
+        st.info("No Yahoo rank climbers in the last 7 days yet.")
     else:
         _render_ranked_table(
             yahoo_rank_growth,
@@ -281,13 +283,46 @@ with yahoo_growth_col:
 
 with stocktwits_growth_col:
     st.markdown("**StockTwits**")
-    st.caption("Ranked by StockTwits search growth over the last 7 days.")
+    st.caption("Ranked by StockTwits mention growth over the last 7 days.")
     if social_growth.empty:
-        st.info("StockTwits mention data is unavailable. Run a refresh later.")
+        st.info("No StockTwits mention climbers in the last 7 days yet.")
     else:
         _render_ranked_table(
             social_growth,
             "social_change",
-            "Searches Gained (7D)",
+            "Mentions Gained (7D)",
+            "%+,.0f",
+        )
+
+st.subheader("Biggest drop over the last 7 days")
+
+yahoo_drop_col, stocktwits_drop_col = st.columns(2)
+
+with yahoo_drop_col:
+    st.markdown("**Yahoo Finance**")
+    st.caption(
+        "Ranked by how many trending positions fell over the last 7 days "
+        "(includes tickers that left Yahoo's top 100)."
+    )
+    if yahoo_rank_drop.empty:
+        st.info("No Yahoo rank declines in the last 7 days yet.")
+    else:
+        _render_ranked_table(
+            yahoo_rank_drop,
+            "yahoo_rank_change",
+            "Ranks Fallen (7D)",
+            "%+,.0f",
+        )
+
+with stocktwits_drop_col:
+    st.markdown("**StockTwits**")
+    st.caption("Ranked by StockTwits mention decline over the last 7 days.")
+    if social_drop.empty:
+        st.info("No StockTwits mention declines in the last 7 days yet.")
+    else:
+        _render_ranked_table(
+            social_drop,
+            "social_change",
+            "Mentions Lost (7D)",
             "%+,.0f",
         )

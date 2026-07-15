@@ -66,8 +66,10 @@ def load_dashboard_data() -> dict[str, pd.DataFrame]:
         "metrics": metrics,
         "attention": pd.DataFrame(),
         "social_growth": pd.DataFrame(),
+        "social_drop": pd.DataFrame(),
         "most_mentioned": pd.DataFrame(),
         "yahoo_rank_growth": pd.DataFrame(),
+        "yahoo_rank_drop": pd.DataFrame(),
         "most_trending_yahoo": pd.DataFrame(),
     }
 
@@ -85,24 +87,34 @@ def load_dashboard_data() -> dict[str, pd.DataFrame]:
     most_mentioned = attention.dropna(subset=["current_mentions"]).sort_values(
         "current_mentions", ascending=False
     )
-    social_growth = attention.dropna(subset=["social_change"]).sort_values(
-        "social_change", ascending=False
-    )
+    social_with_change = attention.dropna(subset=["social_change"])
+    social_growth = social_with_change.loc[
+        social_with_change["social_change"] > 0
+    ].sort_values("social_change", ascending=False)
+    social_drop = social_with_change.loc[
+        social_with_change["social_change"] < 0
+    ].sort_values("social_change", ascending=True)
     most_trending_yahoo = attention.dropna(subset=["current_yahoo_rank"]).sort_values(
         "current_yahoo_rank", ascending=True
     )
-    yahoo_rank_growth = attention.dropna(subset=["yahoo_rank_change"]).sort_values(
-        "yahoo_rank_change", ascending=False
-    )
+    yahoo_with_change = attention.dropna(subset=["yahoo_rank_change"])
+    yahoo_rank_growth = yahoo_with_change.loc[
+        yahoo_with_change["yahoo_rank_change"] > 0
+    ].sort_values("yahoo_rank_change", ascending=False)
+    yahoo_rank_drop = yahoo_with_change.loc[
+        yahoo_with_change["yahoo_rank_change"] < 0
+    ].sort_values("yahoo_rank_change", ascending=True)
 
     return {
         "earnings": earnings,
         "metrics": metrics,
         "attention": attention,
         "social_growth": social_growth,
+        "social_drop": social_drop,
         "most_mentioned": most_mentioned,
         "most_trending_yahoo": most_trending_yahoo,
         "yahoo_rank_growth": yahoo_rank_growth,
+        "yahoo_rank_drop": yahoo_rank_drop,
     }
 
 
@@ -122,22 +134,35 @@ def _latest_current_mentions(metrics: pd.DataFrame) -> pd.DataFrame:
 
 
 def _latest_yahoo_ranks(metrics: pd.DataFrame) -> pd.DataFrame:
-    """Return each ticker's most recent Yahoo Finance trending rank."""
+    """Return each ticker's Yahoo Finance trending rank from the latest day.
+
+    Uses the most recent calendar snapshot per ticker. Tickers that have
+    dropped off Yahoo's list (``NULL`` on the latest day) are omitted so they
+    do not keep appearing under "Most trending" with a stale older rank.
+    """
     if metrics.empty or "yahoo_trend_rank" not in metrics.columns:
         return pd.DataFrame(columns=["ticker", "current_yahoo_rank"])
 
-    ranks = metrics.dropna(subset=["yahoo_trend_rank"]).sort_values("date")
-    if ranks.empty:
+    history = metrics.sort_values("date")
+    if history.empty:
         return pd.DataFrame(columns=["ticker", "current_yahoo_rank"])
 
-    latest = ranks.groupby("ticker", as_index=False).last()[
+    # Use tail(1), not groupby().last() — last() skips NA and would keep a
+    # stale on-list rank after a ticker falls off Yahoo's trending list.
+    latest = history.groupby("ticker", as_index=False).tail(1)[
         ["ticker", "yahoo_trend_rank"]
     ]
+    latest = latest.dropna(subset=["yahoo_trend_rank"])
     return latest.rename(columns={"yahoo_trend_rank": "current_yahoo_rank"})
 
 
 def _yahoo_rank_change(metrics: pd.DataFrame, days: int = 7) -> pd.DataFrame:
-    """Return how many Yahoo trending ranks each ticker climbed over ``days``."""
+    """Return how many Yahoo trending ranks each ticker climbed over ``days``.
+
+    Positive = climbed (e.g. #20 → #5 is +15). Negative = fell (e.g. #5 → #20
+    is -15). Tickers that drop entirely off Yahoo's list are treated as rank
+    ``_OFF_YAHOO_LIST_RANK`` for the current side of the comparison.
+    """
     if metrics.empty or "yahoo_trend_rank" not in metrics.columns:
         return pd.DataFrame(columns=["ticker", "yahoo_rank_change"])
 
@@ -148,21 +173,27 @@ def _yahoo_rank_change(metrics: pd.DataFrame, days: int = 7) -> pd.DataFrame:
     records: list[dict[str, object]] = []
     for ticker, ticker_data in history.groupby("ticker", sort=False):
         latest = ticker_data.iloc[-1]
-        if pd.isna(latest["yahoo_trend_rank"]):
-            continue
-
         target_date = latest["date"] - pd.Timedelta(days=days)
         previous_rows = ticker_data[ticker_data["date"] <= target_date]
         if previous_rows.empty:
             continue
 
         previous_rank = previous_rows.iloc[-1]["yahoo_trend_rank"]
+        current_rank = latest["yahoo_trend_rank"]
+        # No signal if the ticker was off-list at both ends of the window.
+        if pd.isna(previous_rank) and pd.isna(current_rank):
+            continue
+
         previous_value = (
             int(previous_rank)
             if pd.notna(previous_rank)
             else _OFF_YAHOO_LIST_RANK
         )
-        current_value = int(latest["yahoo_trend_rank"])
+        current_value = (
+            int(current_rank)
+            if pd.notna(current_rank)
+            else _OFF_YAHOO_LIST_RANK
+        )
         records.append(
             {
                 "ticker": ticker,

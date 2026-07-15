@@ -71,9 +71,16 @@ class DashboardDataTests(unittest.TestCase):
     def test_yahoo_rank_helpers_track_trending_position_changes(self) -> None:
         metrics = pd.DataFrame(
             {
-                "date": ["2026-07-01", "2026-07-08", "2026-07-01", "2026-07-08"],
-                "ticker": ["AAPL", "AAPL", "MSFT", "MSFT"],
-                "yahoo_trend_rank": [None, 5, 40, 20],
+                "date": [
+                    "2026-07-01",
+                    "2026-07-08",
+                    "2026-07-01",
+                    "2026-07-08",
+                    "2026-07-01",
+                    "2026-07-08",
+                ],
+                "ticker": ["AAPL", "AAPL", "MSFT", "MSFT", "NVDA", "NVDA"],
+                "yahoo_trend_rank": [None, 5, 40, 20, 3, None],
             }
         )
 
@@ -86,7 +93,11 @@ class DashboardDataTests(unittest.TestCase):
         changes = _yahoo_rank_change(metrics, days=7)
         self.assertEqual(
             changes.set_index("ticker")["yahoo_rank_change"].to_dict(),
-            {"AAPL": 96, "MSFT": 20},
+            {
+                "AAPL": 96,  # off-list → #5
+                "MSFT": 20,  # #40 → #20
+                "NVDA": -98,  # #3 → off-list (treated as #101)
+            },
         )
 
     def test_last_data_refresh_helpers(self) -> None:
