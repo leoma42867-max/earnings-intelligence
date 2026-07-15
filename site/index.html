@@ -30,14 +30,18 @@
         border: 0;
       }
 
-      /* Covers Streamlit Cloud's "Built with Streamlit" / fullscreen bar */
+      /*
+        Streamlit Community Cloud keeps a "Built with Streamlit" mark in the
+        sidebar footer. Parent CSS cannot style the cross-origin iframe, so
+        cover that corner instead.
+      */
       .streamlit-badge-mask {
         position: absolute;
-        right: 0;
+        left: 0;
         bottom: 0;
-        width: 280px;
-        height: 40px;
-        background: #0b1120;
+        width: 360px;
+        height: 52px;
+        background: #0e1117;
         z-index: 2;
         pointer-events: auto;
       }
