@@ -14,23 +14,40 @@
         margin: 0;
         height: 100%;
         overflow: hidden;
+        /* Matches Streamlit dark embed chrome so the clipped edge disappears */
         background: #0e1117;
       }
 
+      .frame-wrap {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0e1117;
+      }
+
+      /*
+        Make the iframe taller than the viewport, then clip the bottom.
+        The Streamlit watermark / Fullscreen / profile controls sit in that
+        clipped strip — no colored overlay bar on top of the UI.
+      */
       iframe {
         display: block;
         width: 100%;
-        height: 100%;
+        height: calc(100% + 48px);
         border: 0;
+        background: #0e1117;
       }
     </style>
   </head>
   <body>
-    <iframe
-      src="https://marketslite.streamlit.app/?embed=true"
-      title="MarketsLite"
-      allow="clipboard-write; fullscreen"
-      loading="eager"
-    ></iframe>
+    <div class="frame-wrap">
+      <iframe
+        src="https://marketslite.streamlit.app/?embed=true"
+        title="MarketsLite"
+        allow="clipboard-write"
+        loading="eager"
+      ></iframe>
+    </div>
   </body>
 </html>
