@@ -21,6 +21,10 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+        html, body, [data-testid="stAppViewContainer"], .stApp {
+            background-color: #0b1120 !important;
+        }
+        [data-testid="stHeader"] { background: transparent; }
         .stApp { background: #0b1120; }
         [data-testid="stMetric"] {
             background: #121c31; border: 1px solid #23304d; border-radius: 10px;
