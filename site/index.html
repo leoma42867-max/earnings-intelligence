@@ -14,7 +14,13 @@
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: #0e1117;
+        background: #0b1120;
+      }
+
+      .frame-wrap {
+        position: relative;
+        width: 100%;
+        height: 100%;
       }
 
       iframe {
@@ -23,14 +29,29 @@
         height: 100%;
         border: 0;
       }
+
+      /* Covers Streamlit Cloud's "Built with Streamlit" / fullscreen bar */
+      .streamlit-badge-mask {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 280px;
+        height: 40px;
+        background: #0b1120;
+        z-index: 2;
+        pointer-events: auto;
+      }
     </style>
   </head>
   <body>
-    <iframe
-      src="https://earnday.streamlit.app/?embed=true"
-      title="MarketsLite"
-      allow="clipboard-write; fullscreen"
-      loading="eager"
-    ></iframe>
+    <div class="frame-wrap">
+      <iframe
+        src="https://earnday.streamlit.app/?embed=true"
+        title="MarketsLite"
+        allow="clipboard-write; fullscreen"
+        loading="eager"
+      ></iframe>
+      <div class="streamlit-badge-mask" aria-hidden="true"></div>
+    </div>
   </body>
 </html>
