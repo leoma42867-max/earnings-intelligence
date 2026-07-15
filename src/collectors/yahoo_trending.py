@@ -46,6 +46,10 @@ def fetch_yahoo_trend_ranks(
     """
     snapshot_date = metric_date or date.today().isoformat()
     rank_by_ticker = _fetch_trending_equity_ranks()
+    # API/network failure → empty frame so the pipeline skips the upsert and
+    # keeps yesterday's ranks instead of writing an all-NULL wipe for today.
+    if rank_by_ticker is None:
+        return pd.DataFrame(columns=RANK_COLUMNS)
 
     records = [
         {
@@ -59,8 +63,12 @@ def fetch_yahoo_trend_ranks(
     return pd.DataFrame(records, columns=RANK_COLUMNS)
 
 
-def _fetch_trending_equity_ranks() -> dict[str, int]:
-    """Return ``{ticker: rank}`` for Yahoo Finance's current US trending list."""
+def _fetch_trending_equity_ranks() -> dict[str, int] | None:
+    """Return ``{ticker: rank}`` for Yahoo Finance's current US trending list.
+
+    Returns ``None`` when the request fails so callers can avoid overwriting
+    prior successful snapshots with an all-null day.
+    """
     try:
         response = requests.get(
             _TRENDING_URL,
@@ -72,7 +80,7 @@ def _fetch_trending_equity_ranks() -> dict[str, int]:
         payload = response.json()
     except Exception as exc:
         print(f"Warning: Yahoo Finance trending symbols unavailable: {exc}")
-        return {}
+        return None
 
     quotes = payload.get("finance", {}).get("result", [{}])[0].get("quotes", [])
     ranks: dict[str, int] = {}

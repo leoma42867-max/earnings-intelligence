@@ -100,11 +100,20 @@ class PipelineScoringScopeTests(unittest.TestCase):
             {"ticker": ["ACTIVE"], "date": [date.today().isoformat()], "social_mentions": [55]}
         )
 
+        yahoo_ranks = pd.DataFrame(
+            {
+                "ticker": ["ACTIVE"],
+                "date": [date.today().isoformat()],
+                "yahoo_trend_rank": [4],
+            }
+        )
+
         with (
             patch("src.pipeline.fetch_hyped_tickers", return_value=["ACTIVE"]),
             patch("src.pipeline.fetch_upcoming_earnings", return_value=active_earnings),
             patch("src.pipeline.fetch_market_data", return_value=active_market),
             patch("src.pipeline.fetch_social_mentions", return_value=active_mentions),
+            patch("src.pipeline.fetch_yahoo_trend_ranks", return_value=yahoo_ranks),
         ):
             result = run_refresh_pipeline(database_path=self.db_path)
 

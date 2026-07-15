@@ -177,6 +177,19 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(ranks["AAPL"], 2)
         self.assertTrue(pd.isna(ranks["MSFT"]))
 
+    @patch("src.collectors.yahoo_trending.requests.get")
+    def test_yahoo_trend_ranks_returns_empty_on_request_failure(
+        self, get_mock
+    ) -> None:
+        get_mock.side_effect = RuntimeError("network down")
+
+        result = yahoo_trending.fetch_yahoo_trend_ranks(
+            ["IBM", "AAPL"], metric_date="2026-07-14"
+        )
+
+        self.assertTrue(result.empty)
+        self.assertEqual(list(result.columns), ["date", "ticker", "yahoo_trend_rank"])
+
     @patch("src.collectors.stock_info._fetch_single_ticker")
     def test_stock_info_normalizes_symbols_and_continues_after_failure(self, fetch_mock) -> None:
         fetch_mock.side_effect = [
