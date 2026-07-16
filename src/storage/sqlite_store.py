@@ -305,7 +305,7 @@ class SQLiteStore:
                 FROM attention_scores
                 GROUP BY ticker
             )
-            SELECT e.ticker, c.company_name, e.earnings_date, a.attention_score
+            SELECT e.ticker, c.company_name, c.sector, e.earnings_date, a.attention_score
             FROM month_earnings m
             JOIN earnings e ON e.ticker = m.ticker
                            AND e.earnings_date = m.earnings_date
