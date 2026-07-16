@@ -41,6 +41,46 @@ class SQLiteStoreTests(unittest.TestCase):
         self.assertEqual(result.loc[0, "company_name"], "Apple Inc.")
         self.assertEqual(result.loc[0, "estimated_eps"], 2.5)
 
+    def test_get_earnings_in_month_returns_month_scoped_events_with_scores(self) -> None:
+        target = date.today().replace(day=15)
+        other_month = (target.replace(day=1) + timedelta(days=32)).replace(day=10)
+        earnings = pd.DataFrame(
+            {
+                "ticker": ["HOT", "COLD", "NEXT"],
+                "company_name": ["Hot Co", "Cold Co", "Next Mo"],
+                "sector": ["Tech", "Tech", "Tech"],
+                "earnings_date": [
+                    target.isoformat(),
+                    target.isoformat(),
+                    other_month.isoformat(),
+                ],
+                "estimated_eps": [1.0, 1.0, 1.0],
+                "estimated_revenue": [10.0, 10.0, 10.0],
+            }
+        )
+        scores = pd.DataFrame(
+            {
+                "ticker": ["HOT", "COLD"],
+                "attention_score": [90.0, 20.0],
+                "social_change": [10.0, 1.0],
+                "volume_change": [0.0, 0.0],
+                "price_growth_pct": [0.0, 0.0],
+                "yahoo_change": [None, None],
+                "social_points": [50.0, 5.0],
+                "volume_points": [0.0, 0.0],
+                "price_points": [0.0, 0.0],
+                "yahoo_points": [0.0, 0.0],
+            }
+        )
+        self.store.upsert_earnings(earnings)
+        self.store.upsert_attention_scores(scores, calculation_date=date.today().isoformat())
+
+        month = self.store.get_earnings_in_month(target.year, target.month)
+        tickers = month["ticker"].tolist()
+        self.assertEqual(tickers, ["HOT", "COLD"])
+        self.assertEqual(month.loc[0, "attention_score"], 90.0)
+        self.assertNotIn("NEXT", tickers)
+
     def test_daily_metric_upserts_merge_market_and_social_values(self) -> None:
         market = pd.DataFrame(
             {

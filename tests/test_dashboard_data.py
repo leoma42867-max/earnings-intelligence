@@ -1,5 +1,6 @@
 """Unit tests for dashboard data preparation."""
 
+from datetime import date
 import unittest
 
 import pandas as pd
@@ -8,6 +9,7 @@ from src.dashboard.data import (
     _latest_current_mentions,
     _latest_yahoo_ranks,
     _yahoo_rank_change,
+    build_anticipated_earnings_calendar,
     format_last_data_refresh,
     get_last_data_refresh_at,
     load_dashboard_data,
@@ -123,6 +125,70 @@ class DashboardDataTests(unittest.TestCase):
         assert label is not None
         self.assertTrue(label.startswith("Data last refreshed"))
         self.assertIn("2026", label)
+
+    def test_build_anticipated_earnings_calendar_uses_reference_month(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from src.storage.sqlite_store import SQLiteStore
+
+        with TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "calendar.db"
+            store = SQLiteStore(db_path)
+            store.upsert_earnings(
+                pd.DataFrame(
+                    {
+                        "ticker": ["AAA", "BBB", "CCC"],
+                        "company_name": ["Alpha", "Beta", "Gamma"],
+                        "sector": ["Tech", "Tech", "Tech"],
+                        "earnings_date": [
+                            "2026-03-05",
+                            "2026-03-05",
+                            "2026-04-02",
+                        ],
+                        "estimated_eps": [1.0, 1.0, 1.0],
+                        "estimated_revenue": [10.0, 10.0, 10.0],
+                    }
+                )
+            )
+            store.upsert_attention_scores(
+                pd.DataFrame(
+                    {
+                        "ticker": ["AAA", "BBB"],
+                        "attention_score": [12.0, 88.0],
+                        "social_change": [1.0, 2.0],
+                        "volume_change": [0.0, 0.0],
+                        "price_growth_pct": [0.0, 0.0],
+                        "yahoo_change": [None, None],
+                        "social_points": [1.0, 2.0],
+                        "volume_points": [0.0, 0.0],
+                        "price_points": [0.0, 0.0],
+                        "yahoo_points": [0.0, 0.0],
+                    }
+                ),
+                calculation_date="2026-03-01",
+            )
+
+            march = build_anticipated_earnings_calendar(
+                reference_date=date(2026, 3, 10),
+                database_path=db_path,
+            )
+            april = build_anticipated_earnings_calendar(
+                reference_date=date(2026, 4, 1),
+                database_path=db_path,
+            )
+
+        self.assertEqual(march["month_label"], "March 2026")
+        self.assertEqual(
+            [item["ticker"] for item in march["days"][5]],
+            ["BBB", "AAA"],
+        )
+        self.assertEqual(march["event_count"], 2)
+        self.assertEqual(april["month_label"], "April 2026")
+        self.assertEqual(
+            [item["ticker"] for item in april["days"][2]],
+            ["CCC"],
+        )
 
 
 if __name__ == "__main__":

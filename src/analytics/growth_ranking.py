@@ -36,6 +36,10 @@ PCT_SIGNALS = {
 
 SIGNALS = {**COUNT_SIGNALS, **PCT_SIGNALS}
 
+# Off Yahoo's trending list (~top 100) is treated as one slot below the list
+# when measuring how many ranks a ticker climbed.
+_OFF_YAHOO_LIST_RANK = 101
+
 
 def calculate_growth_metrics(daily_metrics: pd.DataFrame) -> pd.DataFrame:
     """Calculate 1, 3, 7, and 30-day change for each ticker.
@@ -43,16 +47,16 @@ def calculate_growth_metrics(daily_metrics: pd.DataFrame) -> pd.DataFrame:
     Args:
         daily_metrics: A DataFrame containing ``date``, ``ticker``,
             ``social_mentions``, ``volume``, and ``close``. Fields can be
-            null when a source did not return data.
+            null when a source did not return data. Optional columns
+            ``avg_volume_30d`` and ``yahoo_trend_rank`` improve scoring.
 
     Returns:
         One row per ticker. Social mentions and volume are reported as the
         raw ``current value - value N days earlier`` (e.g. ``social_7d_change``).
-        Price is still reported as a percentage (``price_7d_growth_pct``),
-        since a dollar move is not comparable across differently priced
-        stocks. If no value is available on the target date, the closest
-        earlier observation is used. A metric is ``NaN`` when insufficient
-        history or source data exists.
+        Volume also gets a relative change vs 30-day average volume
+        (``volume_7d_rel_change``) so mega-caps do not dominate the score.
+        Price is a percentage (``price_7d_growth_pct``). Yahoo trend climbs
+        are ``yahoo_7d_change`` (positive = moved up the trending list).
     """
     metrics = daily_metrics.copy()
     _validate_metrics(metrics)
@@ -69,15 +73,23 @@ def calculate_growth_metrics(daily_metrics: pd.DataFrame) -> pd.DataFrame:
 
         for source_column, label in COUNT_SIGNALS.items():
             for days in GROWTH_PERIODS:
-                record[f"{label}_{days}d_change"] = _change_for_period(
-                    ticker_data, source_column, days
-                )
+                raw_change = _change_for_period(ticker_data, source_column, days)
+                record[f"{label}_{days}d_change"] = raw_change
+                if label == "volume":
+                    record[f"volume_{days}d_rel_change"] = _relative_volume_change(
+                        raw_change, latest_row.get("avg_volume_30d")
+                    )
 
         for source_column, label in PCT_SIGNALS.items():
             for days in GROWTH_PERIODS:
                 record[f"{label}_{days}d_growth_pct"] = _growth_for_period(
                     ticker_data, source_column, days
                 )
+
+        for days in GROWTH_PERIODS:
+            record[f"yahoo_{days}d_change"] = _yahoo_rank_climb_for_period(
+                ticker_data, days
+            )
 
         records.append(record)
 
@@ -102,7 +114,12 @@ def rank_companies_by_growth(daily_metrics: pd.DataFrame) -> pd.DataFrame:
     score_columns: list[str] = []
     for label in COUNT_SIGNALS.values():
         for days in GROWTH_PERIODS:
-            column = f"{label}_{days}d_change"
+            # Prefer relative volume so absolute share volume does not dominate.
+            column = (
+                f"volume_{days}d_rel_change"
+                if label == "volume"
+                else f"{label}_{days}d_change"
+            )
             score_column = f"{column}_score"
             growth[score_column] = _normalize_change(growth[column])
             score_columns.append(score_column)
@@ -112,6 +129,11 @@ def rank_companies_by_growth(daily_metrics: pd.DataFrame) -> pd.DataFrame:
             score_column = f"{column}_score"
             growth[score_column] = _normalize_growth(growth[column], cap_pct=30.0)
             score_columns.append(score_column)
+    for days in GROWTH_PERIODS:
+        column = f"yahoo_{days}d_change"
+        score_column = f"{column}_score"
+        growth[score_column] = _normalize_change(growth[column])
+        score_columns.append(score_column)
 
     growth["growth_score"] = growth[score_columns].mean(axis=1, skipna=True).round(2)
     growth = growth.drop(columns=score_columns)
@@ -141,6 +163,51 @@ def _change_for_period(
     previous_value = historical.iloc[-1][column]
     current_value = latest[column]
     return round(current_value - previous_value, 2)
+
+
+def _relative_volume_change(
+    raw_volume_change: float | None, avg_volume_30d: object
+) -> float | None:
+    """Scale a volume change by 30-day average volume (unusual-activity signal)."""
+    if raw_volume_change is None:
+        return None
+    if avg_volume_30d is None or pd.isna(avg_volume_30d):
+        return None
+    average = float(avg_volume_30d)
+    if average <= 0:
+        return None
+    return round(raw_volume_change / average, 4)
+
+
+def _yahoo_rank_climb_for_period(
+    ticker_data: pd.DataFrame, days: int
+) -> float | None:
+    """Return how many Yahoo trending ranks climbed over ``days`` (positive = up)."""
+    if "yahoo_trend_rank" not in ticker_data.columns:
+        return None
+
+    history = ticker_data.sort_values("date")
+    if history.empty:
+        return None
+
+    latest = history.iloc[-1]
+    target_date = latest["date"] - pd.Timedelta(days=days)
+    previous_rows = history[history["date"] <= target_date]
+    if previous_rows.empty:
+        return None
+
+    previous_rank = previous_rows.iloc[-1]["yahoo_trend_rank"]
+    current_rank = latest["yahoo_trend_rank"]
+    if pd.isna(previous_rank) and pd.isna(current_rank):
+        return None
+
+    previous_value = (
+        int(previous_rank) if pd.notna(previous_rank) else _OFF_YAHOO_LIST_RANK
+    )
+    current_value = (
+        int(current_rank) if pd.notna(current_rank) else _OFF_YAHOO_LIST_RANK
+    )
+    return float(previous_value - current_value)
 
 
 def _growth_for_period(

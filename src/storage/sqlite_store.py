@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -66,9 +67,11 @@ class SQLiteStore:
                     social_change REAL,
                     volume_change REAL,
                     price_growth_pct REAL,
+                    yahoo_change REAL,
                     social_points REAL,
                     volume_points REAL,
                     price_points REAL,
+                    yahoo_points REAL,
                     PRIMARY KEY (ticker, calculation_date)
                 );
 
@@ -226,9 +229,11 @@ class SQLiteStore:
                 _value(row, "social_change"),
                 _value(row, "volume_change"),
                 _value(row, "price_growth_pct"),
+                _value(row, "yahoo_change"),
                 _value(row, "social_points"),
                 _value(row, "volume_points"),
                 _value(row, "price_points"),
+                _value(row, "yahoo_points"),
             )
             for row in scores.itertuples(index=False)
         ]
@@ -237,17 +242,19 @@ class SQLiteStore:
                 """
                 INSERT INTO attention_scores (
                     ticker, calculation_date, attention_score,
-                    social_change, volume_change, price_growth_pct,
-                    social_points, volume_points, price_points
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    social_change, volume_change, price_growth_pct, yahoo_change,
+                    social_points, volume_points, price_points, yahoo_points
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ticker, calculation_date) DO UPDATE SET
                     attention_score = excluded.attention_score,
                     social_change = excluded.social_change,
                     volume_change = excluded.volume_change,
                     price_growth_pct = excluded.price_growth_pct,
+                    yahoo_change = excluded.yahoo_change,
                     social_points = excluded.social_points,
                     volume_points = excluded.volume_points,
-                    price_points = excluded.price_points
+                    price_points = excluded.price_points,
+                    yahoo_points = excluded.yahoo_points
                 """,
                 rows,
             )
@@ -271,6 +278,47 @@ class SQLiteStore:
             ORDER BY e.earnings_date, e.ticker
             """,
             (f"+{days} days",),
+        )
+
+    def get_earnings_in_month(self, year: int, month: int) -> pd.DataFrame:
+        """Return tracked earnings in a calendar month with latest attention scores.
+
+        Used by the homepage month calendar. Attention scores are optional so
+        past dates in the month still appear after a ticker drops out of the
+        live rankings window.
+        """
+        start = date(year, month, 1).isoformat()
+        if month == 12:
+            end = date(year + 1, 1, 1).isoformat()
+        else:
+            end = date(year, month + 1, 1).isoformat()
+        return self._query(
+            """
+            WITH month_earnings AS (
+                SELECT ticker, MIN(earnings_date) AS earnings_date
+                FROM earnings
+                WHERE earnings_date >= ? AND earnings_date < ?
+                GROUP BY ticker
+            ),
+            latest_scores AS (
+                SELECT ticker, MAX(calculation_date) AS calculation_date
+                FROM attention_scores
+                GROUP BY ticker
+            )
+            SELECT e.ticker, c.company_name, e.earnings_date, a.attention_score
+            FROM month_earnings m
+            JOIN earnings e ON e.ticker = m.ticker
+                           AND e.earnings_date = m.earnings_date
+            JOIN companies c ON c.ticker = e.ticker
+            LEFT JOIN latest_scores l ON l.ticker = e.ticker
+            LEFT JOIN attention_scores a ON a.ticker = l.ticker
+                                       AND a.calculation_date = l.calculation_date
+            ORDER BY e.earnings_date,
+                     CASE WHEN a.attention_score IS NULL THEN 1 ELSE 0 END,
+                     a.attention_score DESC,
+                     e.ticker
+            """,
+            (start, end),
         )
 
     def get_daily_metrics(
@@ -325,8 +373,9 @@ class SQLiteStore:
             SELECT a.ticker, c.company_name, c.sector, e.earnings_date,
                    e.estimated_eps, e.estimated_revenue,
                    a.attention_score, a.social_change, a.volume_change,
-                   a.price_growth_pct, a.social_points, a.volume_points,
-                   a.price_points, a.calculation_date
+                   a.price_growth_pct, a.yahoo_change, a.social_points,
+                   a.volume_points, a.price_points, a.yahoo_points,
+                   a.calculation_date
             FROM latest_scores l
             JOIN attention_scores a ON a.ticker = l.ticker
                                   AND a.calculation_date = l.calculation_date
@@ -373,6 +422,15 @@ class SQLiteStore:
                 columns & legacy_growth_columns and "social_change" not in columns
             ):
                 conn.execute("DROP TABLE attention_scores")
+            else:
+                if "yahoo_change" not in columns:
+                    conn.execute(
+                        "ALTER TABLE attention_scores ADD COLUMN yahoo_change REAL"
+                    )
+                if "yahoo_points" not in columns:
+                    conn.execute(
+                        "ALTER TABLE attention_scores ADD COLUMN yahoo_points REAL"
+                    )
 
         exists = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='daily_metrics'"

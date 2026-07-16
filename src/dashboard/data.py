@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import calendar as calendar_module
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +14,8 @@ from src.storage.sqlite_store import SQLiteStore
 # Tickers not on Yahoo's trending list are treated as one slot below the
 # maximum list size when measuring how many ranks they climbed over 7 days.
 _OFF_YAHOO_LIST_RANK = 101
+# Keep day cells readable — show the highest-attention tickers first.
+_CALENDAR_TICKERS_PER_DAY = 4
 
 
 def get_last_data_refresh_at(
@@ -49,6 +52,61 @@ def format_last_data_refresh(moment: datetime | None) -> str | None:
     stamp = local.strftime("%b %d, %Y at %I:%M %p").replace(" 0", " ")
     return f"Data last refreshed {stamp} {zone_label}"
 
+
+def build_anticipated_earnings_calendar(
+    reference_date: date | None = None,
+    database_path: Path | str = DATABASE_FILE,
+    tickers_per_day: int = _CALENDAR_TICKERS_PER_DAY,
+) -> dict[str, object]:
+    """Build the current-month anticipated-earnings calendar payload.
+
+    ``reference_date`` defaults to today so the month rolls over automatically
+    when the calendar changes. Each day lists the highest-attention tickers
+    reporting that day (by latest attention score).
+    """
+    today = reference_date or date.today()
+    store = SQLiteStore(database_path)
+    events = store.get_earnings_in_month(today.year, today.month)
+    days_in_month = calendar_module.monthrange(today.year, today.month)[1]
+    # Monday-first week index matching calendar.setfirstweekday(calendar.MONDAY)
+    first_weekday = date(today.year, today.month, 1).weekday()
+
+    by_day: dict[int, list[dict[str, object]]] = {day: [] for day in range(1, days_in_month + 1)}
+    if not events.empty:
+        events = events.copy()
+        events["earnings_date"] = pd.to_datetime(events["earnings_date"]).dt.date
+        for _, row in events.iterrows():
+            event_day = row["earnings_date"].day
+            score = row.get("attention_score")
+            by_day[event_day].append(
+                {
+                    "ticker": str(row["ticker"]),
+                    "company_name": str(row.get("company_name") or row["ticker"]),
+                    "attention_score": (
+                        float(score) if score is not None and pd.notna(score) else None
+                    ),
+                }
+            )
+        for day, tickers in by_day.items():
+            tickers.sort(
+                key=lambda item: (
+                    item["attention_score"] is None,
+                    -(item["attention_score"] or 0.0),
+                    item["ticker"],
+                )
+            )
+            by_day[day] = tickers[:tickers_per_day]
+
+    return {
+        "year": today.year,
+        "month": today.month,
+        "month_label": today.strftime("%B %Y"),
+        "today": today,
+        "days_in_month": days_in_month,
+        "first_weekday": first_weekday,
+        "days": by_day,
+        "event_count": int(sum(len(tickers) for tickers in by_day.values())),
+    }
 
 def load_dashboard_data() -> dict[str, pd.DataFrame]:
     """Load the canonical attention scores and history from SQLite.

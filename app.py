@@ -1,6 +1,7 @@
 """Earnings Intelligence Platform — Streamlit homepage."""
 
 import hmac
+from datetime import date
 
 import pandas as pd
 import plotly.express as px
@@ -8,6 +9,7 @@ import streamlit as st
 
 from config.secrets import get_setting
 from src.dashboard.data import (
+    build_anticipated_earnings_calendar,
     format_last_data_refresh,
     get_last_data_refresh_at,
     load_dashboard_data,
@@ -37,6 +39,57 @@ st.markdown(
         [data-testid="stMetricLabel"] { color: #9fb0cc; }
         [data-testid="stMetricValue"] { color: #f3f7ff; }
         h1, h2, h3 { color: #f3f7ff; }
+        .earnings-cal {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 6px;
+            margin: 0.4rem 0 0.2rem 0;
+        }
+        .earnings-cal-head {
+            color: #9fb0cc;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            text-align: center;
+            padding: 0.35rem 0;
+        }
+        .earnings-cal-day {
+            min-height: 92px;
+            background: #121c31;
+            border: 1px solid #23304d;
+            border-radius: 10px;
+            padding: 8px;
+        }
+        .earnings-cal-day.empty {
+            background: transparent;
+            border-color: transparent;
+        }
+        .earnings-cal-day.today {
+            border-color: #4f8cff;
+            box-shadow: inset 0 0 0 1px rgba(79, 140, 255, 0.35);
+        }
+        .earnings-cal-day.past {
+            opacity: 0.72;
+        }
+        .earnings-cal-num {
+            color: #9fb0cc;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .earnings-cal-day.today .earnings-cal-num { color: #93c5fd; }
+        .earnings-cal-ticker {
+            display: block;
+            color: #f3f7ff;
+            font-size: 0.78rem;
+            font-weight: 600;
+            line-height: 1.35;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .earnings-cal-ticker.hot { color: #6ee7b7; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -123,6 +176,54 @@ def _render_yahoo_chart(data: pd.DataFrame) -> None:
     st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
 
 
+def _render_earnings_calendar(calendar_data: dict[str, object]) -> None:
+    """Render a month grid of the highest-attention earnings dates."""
+    today = calendar_data["today"]
+    days = calendar_data["days"]
+    first_weekday = int(calendar_data["first_weekday"])
+    days_in_month = int(calendar_data["days_in_month"])
+
+    cells: list[str] = []
+    for label in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"):
+        cells.append(f'<div class="earnings-cal-head">{label}</div>')
+
+    for _ in range(first_weekday):
+        cells.append('<div class="earnings-cal-day empty"></div>')
+
+    for day in range(1, days_in_month + 1):
+        day_date = date(int(calendar_data["year"]), int(calendar_data["month"]), day)
+        classes = ["earnings-cal-day"]
+        if day_date == today:
+            classes.append("today")
+        elif day_date < today:
+            classes.append("past")
+
+        tickers = days.get(day, [])
+        ticker_html = "".join(
+            (
+                f'<span class="earnings-cal-ticker'
+                f'{" hot" if item.get("attention_score") is not None and item["attention_score"] >= 50 else ""}"'
+                f' title="{item["company_name"]}">'
+                f'{item["ticker"]}</span>'
+            )
+            for item in tickers
+        )
+        cells.append(
+            f'<div class="{" ".join(classes)}">'
+            f'<div class="earnings-cal-num">{day}</div>'
+            f"{ticker_html}"
+            f"</div>"
+        )
+
+    trailing = (7 - ((first_weekday + days_in_month) % 7)) % 7
+    for _ in range(trailing):
+        cells.append('<div class="earnings-cal-day empty"></div>')
+
+    st.markdown(
+        f'<div class="earnings-cal">{"".join(cells)}</div>',
+        unsafe_allow_html=True,
+    )
+
 data = get_data()
 attention = data["attention"]
 earnings = data["earnings"]
@@ -141,7 +242,10 @@ with st.sidebar:
     st.caption("Use the Company page in the sidebar for individual research.")
     st.divider()
     st.markdown("**Version 1 model**")
-    st.caption("50% StockTwits mentions gained · 30% volume gained · 20% price momentum")
+    st.caption(
+        "40% StockTwits mentions · 25% Yahoo trend climb · "
+        "20% relative volume · 15% price momentum"
+    )
     if st.button("Reload database", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -214,6 +318,18 @@ metric_columns[3].metric(
     "Average attention score", f"{attention['attention_score'].mean():.1f}/100"
 )
 metric_columns[4].metric("Next earnings", next_earnings)
+
+st.divider()
+st.subheader("Most anticipated earnings this month")
+month_calendar = build_anticipated_earnings_calendar()
+st.caption(
+    f"{month_calendar['month_label']} · ranked by attention score · "
+    "updates automatically each month"
+)
+if month_calendar["event_count"] == 0:
+    st.info("No tracked earnings dates fall in this calendar month yet.")
+else:
+    _render_earnings_calendar(month_calendar)
 
 st.divider()
 st.subheader("Trending ahead of earnings")

@@ -32,6 +32,8 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(apple["social_30d_change"], 30.0)
         # Volume goes from 100 to 200 on the last day: a +100 unit change.
         self.assertEqual(apple["volume_1d_change"], 100.0)
+        # Relative to 30-day average volume of 100: +1.0x average.
+        self.assertEqual(apple["volume_1d_rel_change"], 1.0)
         # Price stays a percentage: $100 -> $110 is +10%.
         self.assertEqual(apple["price_1d_growth_pct"], 10.0)
 
