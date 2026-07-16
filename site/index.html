@@ -4,53 +4,173 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <title>MarketsLite</title>
+    <title>MarketsLite — Attention ahead of earnings</title>
     <meta
       name="description"
-      content="Companies ranked based on investor search activity ahead of earnings reports"
+      content="MarketsLite ranks companies by investor attention before earnings — StockTwits, Yahoo trends, volume, and price — so you know what prints matter this week."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
     />
     <style>
+      :root {
+        --bg: #0b1120;
+        --panel: #121c31;
+        --line: #23304d;
+        --text: #f3f7ff;
+        --muted: #9fb0cc;
+        --accent: #4f8cff;
+        --mint: #6ee7b7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
       html,
       body {
         margin: 0;
-        height: 100%;
-        overflow: hidden;
-        background: #0b1120;
-        color-scheme: dark;
+        min-height: 100%;
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #1a2744 0%, transparent 55%),
+          radial-gradient(900px 500px at 100% 0%, #152033 0%, transparent 50%),
+          var(--bg);
+        color: var(--text);
+        font-family: "DM Sans", sans-serif;
       }
 
-      .frame-wrap {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #0b1120;
+      .page {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 4.5rem 1.5rem 4rem;
       }
 
-      /*
-        Overscan the iframe a few pixels on every side so Streamlit's thin
-        white shell is clipped. Extra height at the bottom also hides the
-        Built with Streamlit / Fullscreen watermark strip.
-      */
-      iframe {
-        position: absolute;
-        top: -3px;
-        left: -3px;
-        width: calc(100% + 6px);
-        height: calc(100% + 54px);
-        border: 0;
-        background: #0b1120;
+      .brand {
+        font-family: "Instrument Serif", Georgia, serif;
+        font-size: clamp(3rem, 8vw, 4.75rem);
+        line-height: 0.95;
+        margin: 0 0 1.25rem;
+        letter-spacing: -0.02em;
+      }
+
+      .headline {
+        font-size: clamp(1.25rem, 3vw, 1.65rem);
+        font-weight: 500;
+        margin: 0 0 0.75rem;
+        max-width: 18ch;
+        line-height: 1.25;
+      }
+
+      .support {
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.5;
+        max-width: 36rem;
+        margin: 0 0 1.75rem;
+      }
+
+      .cta {
+        display: inline-block;
+        background: var(--accent);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 700;
+        padding: 0.85rem 1.35rem;
+        border-radius: 10px;
+      }
+
+      .cta:hover {
+        filter: brightness(1.08);
+      }
+
+      .sample {
+        margin-top: 3.5rem;
+        padding-top: 1.75rem;
+        border-top: 1px solid var(--line);
+      }
+
+      .sample h2 {
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 0.85rem;
+        font-weight: 700;
+      }
+
+      .sample-note {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin: 0 0 1rem;
+      }
+
+      .sample-list {
+        display: grid;
+        gap: 0.55rem;
+      }
+
+      .sample-row {
+        display: flex;
+        gap: 0.85rem;
+        align-items: baseline;
+        flex-wrap: wrap;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+      }
+
+      .sample-row strong {
+        min-width: 3.5rem;
+      }
+
+      .sample-row span {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .heat {
+        color: var(--mint);
+        font-weight: 700;
       }
     </style>
   </head>
   <body>
-    <div class="frame-wrap">
-      <iframe
-        src="https://marketslite.streamlit.app/?embed=true"
-        title="MarketsLite"
-        allow="clipboard-write"
-        loading="eager"
-      ></iframe>
-    </div>
+    <main class="page">
+      <h1 class="brand">MarketsLite</h1>
+      <p class="headline">See which earnings prints are getting attention this week.</p>
+      <p class="support">
+        We rank companies by investor search and trading activity ahead of
+        reports — so you can focus research where the tape is already waking up.
+      </p>
+      <a class="cta" href="/app">Open dashboard</a>
+
+      <section class="sample" aria-label="Sample week preview">
+        <h2>Sample week</h2>
+        <p class="sample-note">
+          Illustrative preview — live rankings update daily in the dashboard.
+        </p>
+        <div class="sample-list">
+          <div class="sample-row">
+            <strong>NVDA</strong>
+            <span>Wed · high heat into the print</span>
+            <span class="heat">attention focus</span>
+          </div>
+          <div class="sample-row">
+            <strong>JPM</strong>
+            <span>Fri · financials in the blast radius</span>
+            <span class="heat">sector watch</span>
+          </div>
+          <div class="sample-row">
+            <strong>CRM</strong>
+            <span>Tue · rising StockTwits mentions</span>
+            <span class="heat">trending</span>
+          </div>
+        </div>
+      </section>
+    </main>
   </body>
 </html>

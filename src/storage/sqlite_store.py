@@ -339,6 +339,70 @@ class SQLiteStore:
             tuple(params),
         )
 
+    def get_all_tickers(self) -> list[str]:
+        """Return every stored company ticker, sorted alphabetically."""
+        frame = self._query("SELECT ticker FROM companies ORDER BY ticker")
+        if frame.empty:
+            return []
+        return [str(ticker) for ticker in frame["ticker"].tolist()]
+
+    def get_company_profile(self, ticker: str) -> dict[str, object]:
+        """Return name/sector for one ticker, or an empty dict if missing."""
+        frame = self._query(
+            "SELECT ticker, company_name, sector FROM companies WHERE ticker = ?",
+            (ticker.upper(),),
+        )
+        if frame.empty:
+            return {}
+        row = frame.iloc[0].to_dict()
+        return {
+            "ticker": str(row["ticker"]),
+            "company_name": str(row["company_name"])
+            if pd.notna(row.get("company_name"))
+            else ticker.upper(),
+            "sector": str(row["sector"])
+            if pd.notna(row.get("sector")) and row.get("sector")
+            else None,
+        }
+
+    def get_latest_earnings_for_ticker(self, ticker: str) -> dict[str, object]:
+        """Return the nearest upcoming print, else the most recent past print."""
+        frame = self._query(
+            """
+            SELECT e.ticker, c.company_name, c.sector, e.earnings_date,
+                   e.estimated_eps, e.estimated_revenue
+            FROM earnings e
+            JOIN companies c ON c.ticker = e.ticker
+            WHERE e.ticker = ?
+            ORDER BY
+                CASE WHEN e.earnings_date >= date('now') THEN 0 ELSE 1 END,
+                CASE WHEN e.earnings_date >= date('now')
+                     THEN e.earnings_date END ASC,
+                e.earnings_date DESC
+            LIMIT 1
+            """,
+            (ticker.upper(),),
+        )
+        return frame.iloc[0].to_dict() if not frame.empty else {}
+
+    def get_latest_attention_for_ticker(self, ticker: str) -> dict[str, object]:
+        """Return the newest attention-score row for a ticker, if any."""
+        frame = self._query(
+            """
+            SELECT a.ticker, c.company_name, c.sector, a.attention_score,
+                   a.social_change, a.volume_change, a.price_growth_pct,
+                   a.yahoo_change, a.social_points, a.volume_points,
+                   a.price_points, a.yahoo_points, a.calculation_date
+            FROM attention_scores a
+            JOIN companies c ON c.ticker = a.ticker
+            WHERE a.ticker = ?
+            ORDER BY a.calculation_date DESC
+            LIMIT 1
+            """,
+            (ticker.upper(),),
+        )
+        return frame.iloc[0].to_dict() if not frame.empty else {}
+
     def get_all_daily_metrics(self) -> pd.DataFrame:
         """Return all historical daily market and social-mention metrics."""
         return self._query(

@@ -12,6 +12,8 @@ from src.dashboard.data import (
     attention_heat,
     build_anticipated_earnings_calendar,
     build_earnings_spillover,
+    build_this_week_focus,
+    build_weekly_postmortem,
     format_last_data_refresh,
     get_last_data_refresh_at,
     load_dashboard_data,
@@ -346,6 +348,87 @@ class DashboardDataTests(unittest.TestCase):
         self.assertEqual(
             [peer["ticker"] for peer in spillover[0]["peers"]],
             ["SMALL", "AMD"],
+        )
+
+    def test_build_this_week_focus_window_and_sort(self) -> None:
+        attention = pd.DataFrame(
+            {
+                "ticker": ["LOW", "HOT", "LATER", "PAST"],
+                "company_name": ["Low", "Hot", "Later", "Past"],
+                "sector": ["Technology"] * 4,
+                "earnings_date": [
+                    "2026-07-16",
+                    "2026-07-15",
+                    "2026-07-30",
+                    "2026-07-10",
+                ],
+                "attention_score": [40.0, 90.0, 99.0, 80.0],
+            }
+        )
+
+        focus = build_this_week_focus(
+            attention, reference_date=date(2026, 7, 14), days=7, limit=8
+        )
+
+        self.assertEqual([item["ticker"] for item in focus], ["HOT", "LOW"])
+        self.assertEqual(focus[0]["heat"], "high")
+        self.assertEqual(focus[1]["heat"], "mid")
+
+    def test_build_weekly_postmortem_beats_and_misses(self) -> None:
+        calendar = {
+            "days": {
+                10: [
+                    {
+                        "ticker": "BEAT",
+                        "earnings_date": date(2026, 7, 10),
+                        "is_past": True,
+                        "reaction_pct": 8.0,
+                    },
+                    {
+                        "ticker": "MISS",
+                        "earnings_date": date(2026, 7, 11),
+                        "is_past": True,
+                        "reaction_pct": -6.5,
+                    },
+                    {
+                        "ticker": "FLAT",
+                        "earnings_date": date(2026, 7, 12),
+                        "is_past": True,
+                        "reaction_pct": 1.0,
+                    },
+                    {
+                        "ticker": "NO_PRICE",
+                        "earnings_date": date(2026, 7, 12),
+                        "is_past": True,
+                        "reaction_pct": None,
+                    },
+                    {
+                        "ticker": "OLD",
+                        "earnings_date": date(2026, 6, 1),
+                        "is_past": True,
+                        "reaction_pct": -20.0,
+                    },
+                    {
+                        "ticker": "FUTURE",
+                        "earnings_date": date(2026, 7, 20),
+                        "is_past": False,
+                        "reaction_pct": None,
+                    },
+                ]
+            }
+        }
+
+        postmortem = build_weekly_postmortem(
+            calendar, reference_date=date(2026, 7, 14), days=7, limit=2
+        )
+
+        self.assertEqual(
+            [item["ticker"] for item in postmortem["beats"]],
+            ["BEAT", "FLAT"],
+        )
+        self.assertEqual(
+            [item["ticker"] for item in postmortem["misses"]],
+            ["MISS", "FLAT"],
         )
 
 

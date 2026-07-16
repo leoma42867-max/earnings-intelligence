@@ -307,23 +307,7 @@ def build_earnings_spillover(
                 peer_source.loc[peer_source["ticker"] == ticker, "sector"].iloc[0]
             )
 
-        peers: list[dict[str, object]] = []
-        if sector and not peer_source.empty and "sector" in peer_source.columns:
-            same_sector = peer_source[
-                (peer_source["sector"] == sector) & (peer_source["ticker"] != ticker)
-            ].sort_values("attention_score", ascending=False)
-            for _, peer in same_sector.head(max_peers).iterrows():
-                peers.append(
-                    {
-                        "ticker": str(peer["ticker"]),
-                        "company_name": str(
-                            peer.get("company_name") or peer["ticker"]
-                        ),
-                        "attention_score": float(peer["attention_score"])
-                        if pd.notna(peer.get("attention_score"))
-                        else None,
-                    }
-                )
+        peers = same_sector_peers(ticker, sector, peer_source, max_peers=max_peers)
 
         if item.get("is_past") and item.get("sentiment") == "bearish":
             watch_note = "sector pressure after bearish print"
@@ -354,6 +338,135 @@ def build_earnings_spillover(
             }
         )
     return results
+
+
+def same_sector_peers(
+    ticker: str,
+    sector: str | None,
+    attention: pd.DataFrame,
+    max_peers: int = 5,
+) -> list[dict[str, object]]:
+    """Return top same-sector peers by attention score, excluding ``ticker``."""
+    if (
+        not sector
+        or attention.empty
+        or "sector" not in attention.columns
+        or "ticker" not in attention.columns
+    ):
+        return []
+    same_sector = attention[
+        (attention["sector"] == sector) & (attention["ticker"] != ticker)
+    ].sort_values("attention_score", ascending=False)
+    peers: list[dict[str, object]] = []
+    for _, peer in same_sector.head(max_peers).iterrows():
+        peers.append(
+            {
+                "ticker": str(peer["ticker"]),
+                "company_name": str(peer.get("company_name") or peer["ticker"]),
+                "attention_score": float(peer["attention_score"])
+                if pd.notna(peer.get("attention_score"))
+                else None,
+            }
+        )
+    return peers
+
+
+def build_this_week_focus(
+    attention: pd.DataFrame,
+    reference_date: date | None = None,
+    days: int = 7,
+    limit: int = 8,
+) -> list[dict[str, object]]:
+    """Return upcoming prints in the next ``days`` days, ranked by attention."""
+    if attention.empty or "earnings_date" not in attention.columns:
+        return []
+    today = reference_date or date.today()
+    end = date.fromordinal(today.toordinal() + days)
+    frame = attention.copy()
+    frame["earnings_date"] = pd.to_datetime(frame["earnings_date"]).dt.date
+    window = frame[
+        (frame["earnings_date"] >= today) & (frame["earnings_date"] < end)
+    ].sort_values("attention_score", ascending=False)
+    results: list[dict[str, object]] = []
+    for _, row in window.head(limit).iterrows():
+        score = (
+            float(row["attention_score"])
+            if pd.notna(row.get("attention_score"))
+            else None
+        )
+        results.append(
+            {
+                "ticker": str(row["ticker"]),
+                "company_name": str(row.get("company_name") or row["ticker"]),
+                "earnings_date": row["earnings_date"],
+                "attention_score": score,
+                "heat": attention_heat(score),
+                "sector": str(row["sector"])
+                if pd.notna(row.get("sector")) and row.get("sector")
+                else None,
+            }
+        )
+    return results
+
+
+def build_weekly_postmortem(
+    calendar: dict[str, object],
+    reference_date: date | None = None,
+    days: int = 7,
+    limit: int = 5,
+) -> dict[str, list[dict[str, object]]]:
+    """Return biggest post-report beats and misses from the last ``days`` days."""
+    today = reference_date or date.today()
+    start = date.fromordinal(today.toordinal() - days)
+    items: list[dict[str, object]] = []
+    for day_tickers in calendar.get("days", {}).values():
+        for item in day_tickers:
+            event_date = item.get("earnings_date")
+            reaction = item.get("reaction_pct")
+            if not item.get("is_past") or reaction is None or event_date is None:
+                continue
+            if start <= event_date < today:
+                items.append(item)
+
+    beats = sorted(
+        items, key=lambda row: float(row["reaction_pct"]), reverse=True
+    )[:limit]
+    misses = sorted(items, key=lambda row: float(row["reaction_pct"]))[:limit]
+    return {"beats": beats, "misses": misses}
+
+
+def coverage_counts(
+    attention: pd.DataFrame, metrics: pd.DataFrame | None = None
+) -> dict[str, int]:
+    """Return honest coverage counts for the homepage caption."""
+    tracked = int(len(attention)) if not attention.empty else 0
+    yahoo = 0
+    stocktwits = 0
+    if not attention.empty and "current_yahoo_rank" in attention.columns:
+        yahoo = int(attention["current_yahoo_rank"].notna().sum())
+    if not attention.empty and "current_mentions" in attention.columns:
+        stocktwits = int(attention["current_mentions"].notna().sum())
+    elif (
+        metrics is not None
+        and not metrics.empty
+        and "social_mentions" in metrics.columns
+    ):
+        stocktwits = int(
+            metrics.dropna(subset=["social_mentions"])["ticker"].nunique()
+        )
+    return {
+        "tracked": tracked,
+        "yahoo": yahoo,
+        "stocktwits": stocktwits,
+    }
+
+
+def get_researchable_tickers(
+    database_path: Path | str = DATABASE_FILE,
+) -> list[str]:
+    """Return tickers with stored company, earnings, or metrics history."""
+    store = SQLiteStore(database_path)
+    return store.get_all_tickers()
 
 
 def load_dashboard_data() -> dict[str, pd.DataFrame]:
@@ -510,7 +623,9 @@ def _yahoo_rank_change(metrics: pd.DataFrame, days: int = 7) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def get_company_data(ticker: str) -> dict[str, object]:
+def get_company_data(
+    ticker: str, database_path: Path | str = DATABASE_FILE
+) -> dict[str, object]:
     """Return all dashboard-ready information for a selected ticker."""
     data = load_dashboard_data()
     ticker = ticker.upper()
@@ -521,12 +636,32 @@ def get_company_data(ticker: str) -> dict[str, object]:
     company_score = data["attention"]
     company_score = company_score[company_score["ticker"] == ticker]
 
+    earnings = (
+        company_earnings.iloc[0].to_dict() if not company_earnings.empty else {}
+    )
+    score = company_score.iloc[0].to_dict() if not company_score.empty else {}
+
+    # Past prints drop out of upcoming rankings — fall back to stored rows.
+    store = SQLiteStore(database_path)
+    if not earnings:
+        earnings = store.get_latest_earnings_for_ticker(ticker)
+    if not score:
+        score = store.get_latest_attention_for_ticker(ticker)
+    if not earnings.get("company_name") or not earnings.get("sector"):
+        profile = store.get_company_profile(ticker)
+        earnings = {**profile, **earnings}
+
+    peers = same_sector_peers(
+        ticker,
+        earnings.get("sector") or score.get("sector"),
+        data["attention"],
+    )
+
     return {
         "metrics": company_metrics,
-        "earnings": company_earnings.iloc[0].to_dict()
-        if not company_earnings.empty
-        else {},
-        "score": company_score.iloc[0].to_dict() if not company_score.empty else {},
+        "earnings": earnings,
+        "score": score,
+        "peers": peers,
     }
 
 

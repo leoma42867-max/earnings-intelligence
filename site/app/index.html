@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>MarketsLite Dashboard</title>
+    <meta
+      name="description"
+      content="Live MarketsLite dashboard — companies ranked by investor attention ahead of earnings."
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b1120;
+        color-scheme: dark;
+      }
+
+      .frame-wrap {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0b1120;
+      }
+
+      /*
+        Overscan the iframe a few pixels on every side so Streamlit's thin
+        white shell is clipped. Extra height at the bottom also hides the
+        Built with Streamlit / Fullscreen watermark strip.
+      */
+      iframe {
+        position: absolute;
+        top: -3px;
+        left: -3px;
+        width: calc(100% + 6px);
+        height: calc(100% + 54px);
+        border: 0;
+        background: #0b1120;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame-wrap">
+      <iframe
+        src="https://marketslite.streamlit.app/?embed=true"
+        title="MarketsLite Dashboard"
+        allow="clipboard-write"
+        loading="eager"
+      ></iframe>
+    </div>
+  </body>
+</html>
