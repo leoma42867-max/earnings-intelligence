@@ -18,12 +18,9 @@
     <style>
       :root {
         --bg: #0b1120;
-        --panel: #121c31;
-        --line: #23304d;
         --text: #f3f7ff;
         --muted: #9fb0cc;
         --accent: #4f8cff;
-        --mint: #6ee7b7;
       }
 
       * {
@@ -85,57 +82,6 @@
       .cta:hover {
         filter: brightness(1.08);
       }
-
-      .sample {
-        margin-top: 3.5rem;
-        padding-top: 1.75rem;
-        border-top: 1px solid var(--line);
-      }
-
-      .sample h2 {
-        font-size: 0.8rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--muted);
-        margin: 0 0 0.85rem;
-        font-weight: 700;
-      }
-
-      .sample-note {
-        color: var(--muted);
-        font-size: 0.9rem;
-        margin: 0 0 1rem;
-      }
-
-      .sample-list {
-        display: grid;
-        gap: 0.55rem;
-      }
-
-      .sample-row {
-        display: flex;
-        gap: 0.85rem;
-        align-items: baseline;
-        flex-wrap: wrap;
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 0.85rem 1rem;
-      }
-
-      .sample-row strong {
-        min-width: 3.5rem;
-      }
-
-      .sample-row span {
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-
-      .heat {
-        color: var(--mint);
-        font-weight: 700;
-      }
     </style>
   </head>
   <body>
@@ -146,30 +92,6 @@
         Tracking investor interest ahead of earnings so you can get ahead of the crowd
       </p>
       <a class="cta" href="/app">Open dashboard</a>
-
-      <section class="sample" aria-label="Sample week preview">
-        <h2>Sample week</h2>
-        <p class="sample-note">
-          Illustrative preview — live rankings update daily in the dashboard.
-        </p>
-        <div class="sample-list">
-          <div class="sample-row">
-            <strong>NVDA</strong>
-            <span>Wed · high heat into the print</span>
-            <span class="heat">attention focus</span>
-          </div>
-          <div class="sample-row">
-            <strong>JPM</strong>
-            <span>Fri · financials in the blast radius</span>
-            <span class="heat">sector watch</span>
-          </div>
-          <div class="sample-row">
-            <strong>CRM</strong>
-            <span>Tue · rising StockTwits mentions</span>
-            <span class="heat">trending</span>
-          </div>
-        </div>
-      </section>
     </main>
   </body>
 </html>
