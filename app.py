@@ -553,8 +553,7 @@ st.subheader("Trending ahead of earnings")
 yahoo_col, stocktwits_col = st.columns(2)
 
 with yahoo_col:
-    st.markdown("**Yahoo Finance**")
-    st.caption("Ranked by how many trending positions climbed over the last 7 days.")
+    st.markdown("**Most Searched**")
     if yahoo_rank_growth.empty:
         st.info("No Yahoo rank climbers in the last 7 days yet.")
     else:
