@@ -24,7 +24,7 @@ st.set_page_config(
     page_title="MarketsLite",
     page_icon="◈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
@@ -34,6 +34,9 @@ st.markdown(
             background-color: #0b1120 !important;
         }
         [data-testid="stHeader"] { background: transparent; }
+        [data-testid="stMainBlockContainer"] {
+            padding-top: 2rem;
+        }
         .stApp { background: #0b1120; }
         [data-testid="stMetric"] {
             background: #121c31; border: 1px solid #23304d; border-radius: 10px;
