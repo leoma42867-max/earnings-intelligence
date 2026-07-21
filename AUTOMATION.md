@@ -112,6 +112,25 @@ to persistent object storage or a hosted database instead — but for a
 single-writer personal project refreshing once a day, a growing SQLite file
 in Git history is a reasonable, simple trade-off.
 
+## Keep Streamlit awake (optional)
+
+Free Streamlit Community Cloud apps **sleep when idle**. Visitors then see an
+“app is inactive” screen while it boots. Daily data refresh does **not** fix
+that.
+
+`.github/workflows/keepalive.yml` pings
+`https://marketslite.streamlit.app/?embed=true` about every 10 minutes so the
+app stays warm. It does not change rankings or the database — it only sends an
+HTTP request.
+
+Enable it by merging the workflow to `main` (same as any other Action). Check
+**GitHub → Actions → Keep Streamlit App Awake** for run history. You can also
+use **Run workflow** to test a ping immediately.
+
+This is best-effort: GitHub cron can run a few minutes late, and Streamlit may
+still sleep occasionally. For a guaranteed always-on host, use a paid Streamlit
+plan or move the app to Railway / Render / Fly.
+
 ## Option 3: Cloud Hosting
 
 Use a platform with:

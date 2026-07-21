@@ -1,0 +1,31 @@
+name: Keep Streamlit App Awake
+
+# Streamlit Community Cloud free apps sleep after idle time. This job hits the
+# public app URL on a short interval so visitors to marketslite.com are less
+# likely to see the "app is inactive" wake-up screen.
+#
+# This does NOT refresh earnings data — that remains daily_pipeline.yml.
+# Keep-alive only prevents (or reduces) idle sleep.
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub can delay scheduled jobs slightly under load.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping MarketsLite Streamlit app
+        run: |
+          set -euo pipefail
+          URL="https://marketslite.streamlit.app/?embed=true"
+          # Follow redirects; accept any 2xx/3xx as "app responded".
+          # A warm app usually returns quickly; a sleeping app may take longer
+          # while Streamlit boots it, which is fine — the request is the wake-up.
+          curl --silent --show-error --fail --location \
+            --max-time 120 \
+            --output /dev/null \
+            --write-out "HTTP %{http_code} in %{time_total}s\n" \
+            "$URL"
