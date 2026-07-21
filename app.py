@@ -43,6 +43,14 @@ st.markdown(
         [data-testid="stMetricLabel"] { color: #9fb0cc; }
         [data-testid="stMetricValue"] { color: #f3f7ff; }
         h1, h2, h3 { color: #f3f7ff; }
+        .trending-column-title {
+            color: #f3f7ff;
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.5;
+            margin: 0 0 0.5rem 0;
+            min-height: 1.5rem;
+        }
         .earnings-cal {
             display: grid;
             grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -553,7 +561,10 @@ st.subheader("Trending ahead of earnings")
 yahoo_col, stocktwits_col = st.columns(2)
 
 with yahoo_col:
-    st.markdown("**Most Searched**")
+    st.markdown(
+        '<div class="trending-column-title">Most Searched</div>',
+        unsafe_allow_html=True,
+    )
     if yahoo_rank_growth.empty:
         st.info("No Yahoo rank climbers in the last 7 days yet.")
     else:
@@ -565,7 +576,10 @@ with yahoo_col:
         )
 
 with stocktwits_col:
-    st.markdown("**Most mentioned**")
+    st.markdown(
+        '<div class="trending-column-title">Most Mentioned</div>',
+        unsafe_allow_html=True,
+    )
     if most_mentioned.empty:
         st.info(
             "StockTwits mentions missing in the latest refresh — "
