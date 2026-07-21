@@ -137,13 +137,12 @@ if not tickers:
 with st.sidebar:
     st.markdown("## ◈ MarketsLite")
     st.caption("Company research")
-    st.page_link("app.py", label="← Back to home", use_container_width=True)
-    st.divider()
     if st.button("Reload database", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
 query_ticker = str(st.query_params.get("ticker", "")).upper().strip()
+invalid_query = bool(query_ticker) and query_ticker not in tickers
 default_index = tickers.index(query_ticker) if query_ticker in tickers else 0
 selected_ticker = st.selectbox("Search a ticker", tickers, index=default_index)
 if st.query_params.get("ticker") != selected_ticker:
@@ -152,12 +151,17 @@ if st.query_params.get("ticker") != selected_ticker:
 company = load_company(selected_ticker)
 metrics = company["metrics"].copy()
 earnings = company["earnings"]
-score = company["score"]
 peers = company.get("peers") or []
 why_chips = company.get("why_chips") or ["Quiet this week"]
 headline = company.get("attention_headline") or "Background"
 
 st.page_link("app.py", label="← Back to home")
+
+if invalid_query:
+    st.warning(
+        f"No data for **{query_ticker}**. Showing **{selected_ticker}** instead — "
+        "pick a ticker below."
+    )
 
 if metrics.empty:
     st.warning(f"No historical metrics are available for {selected_ticker}.")
@@ -197,9 +201,6 @@ chip_html = "".join(
     for chip in why_chips
 )
 st.markdown(f'<div class="why-chips">{chip_html}</div>', unsafe_allow_html=True)
-index_value = score.get("attention_score")
-if index_value is not None and pd.notna(index_value):
-    st.caption(f"Attention index {float(index_value):.0f} (internal ranking signal)")
 
 st.divider()
 chart_col, detail_col = st.columns([1.6, 1])

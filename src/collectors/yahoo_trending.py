@@ -46,9 +46,10 @@ def fetch_yahoo_trend_ranks(
     """
     snapshot_date = metric_date or date.today().isoformat()
     rank_by_ticker = _fetch_trending_equity_ranks()
-    # API/network failure → empty frame so the pipeline skips the upsert and
-    # keeps yesterday's ranks instead of writing an all-NULL wipe for today.
-    if rank_by_ticker is None:
+    # API/network failure or an empty usable list → empty frame so the
+    # pipeline skips the upsert and keeps yesterday's ranks instead of
+    # writing an all-NULL wipe for today.
+    if not rank_by_ticker:
         return pd.DataFrame(columns=RANK_COLUMNS)
 
     records = [

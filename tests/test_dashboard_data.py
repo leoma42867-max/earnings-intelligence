@@ -43,7 +43,7 @@ class DashboardDataTests(unittest.TestCase):
         )
 
     def test_load_dashboard_data_splits_level_and_growth_rankings(self) -> None:
-        """Most-searched and highest-growth are separate orderings."""
+        """Most-mentioned and Yahoo climbers are separate orderings."""
         from unittest.mock import patch
 
         rankings = pd.DataFrame(
@@ -59,9 +59,10 @@ class DashboardDataTests(unittest.TestCase):
         )
         metrics = pd.DataFrame(
             {
-                "date": ["2026-07-08", "2026-07-08"],
-                "ticker": ["HOT", "BIG"],
-                "social_mentions": [30, 500],
+                "date": ["2026-07-01", "2026-07-08", "2026-07-01", "2026-07-08"],
+                "ticker": ["HOT", "HOT", "BIG", "BIG"],
+                "social_mentions": [10, 30, 100, 500],
+                "yahoo_trend_rank": [40, 10, None, None],
             }
         )
 
@@ -77,7 +78,8 @@ class DashboardDataTests(unittest.TestCase):
             data = load_dashboard_data()
 
         self.assertEqual(data["most_mentioned"]["ticker"].tolist(), ["BIG", "HOT"])
-        self.assertEqual(data["social_growth"]["ticker"].tolist(), ["HOT", "BIG"])
+        self.assertEqual(data["yahoo_rank_growth"]["ticker"].tolist(), ["HOT"])
+        self.assertNotIn("social_growth", data)
 
     def test_yahoo_rank_helpers_track_trending_position_changes(self) -> None:
         metrics = pd.DataFrame(
@@ -362,6 +364,7 @@ class DashboardDataTests(unittest.TestCase):
                         "company_name": "IBM",
                         "sector": "Technology",
                         "attention_score": 70.0,
+                        "attention_tier": "background",
                         "is_past": True,
                         "reaction_pct": -4.2,
                         "sentiment": "bearish",
@@ -373,6 +376,7 @@ class DashboardDataTests(unittest.TestCase):
                         "company_name": "Small Co",
                         "sector": "Technology",
                         "attention_score": 99.0,
+                        "attention_tier": "on_radar",
                         "is_past": False,
                         "reaction_pct": None,
                         "sentiment": None,
@@ -408,6 +412,103 @@ class DashboardDataTests(unittest.TestCase):
             ["SMALL", "AMD"],
         )
 
+    def test_spillover_uses_tier_not_absolute_score_for_watch_note(self) -> None:
+        calendar = {
+            "days": {
+                8: [
+                    {
+                        "ticker": "NVDA",
+                        "company_name": "NVIDIA",
+                        "sector": "Technology",
+                        "attention_score": 85.0,
+                        "attention_tier": "background",
+                        "is_past": False,
+                        "reaction_pct": None,
+                        "sentiment": None,
+                    }
+                ]
+            }
+        }
+        attention = pd.DataFrame(
+            {
+                "ticker": ["NVDA", "AMD"],
+                "company_name": ["NVIDIA", "AMD"],
+                "sector": ["Technology", "Technology"],
+                "attention_score": [85.0, 40.0],
+            }
+        )
+
+        spillover = build_earnings_spillover(calendar, attention, max_peers=1)
+        self.assertEqual(spillover[0]["watch_note"], "upcoming influencer print — watch peers")
+
+        calendar["days"][8][0]["attention_tier"] = "on_radar"
+        spillover = build_earnings_spillover(calendar, attention, max_peers=1)
+        self.assertIn("high attention", spillover[0]["watch_note"])
+
+    def test_spillover_sees_influencer_beyond_calendar_display_cap(self) -> None:
+        """Display truncation must not hide mega-caps from spillover."""
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from src.storage.sqlite_store import SQLiteStore
+
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "cal.db"
+            store = SQLiteStore(db_path)
+            # Seven Technology influencers on one day; display shows only 6.
+            tickers = ["AAPL", "MSFT", "NVDA", "GOOGL", "META", "AVGO", "IBM"]
+            store.upsert_earnings(
+                pd.DataFrame(
+                    {
+                        "ticker": tickers,
+                        "company_name": tickers,
+                        "sector": ["Technology"] * len(tickers),
+                        "earnings_date": ["2026-03-15"] * len(tickers),
+                        "estimated_eps": [1.0] * len(tickers),
+                        "estimated_revenue": [10.0] * len(tickers),
+                    }
+                )
+            )
+            for index, ticker in enumerate(tickers):
+                store.upsert_attention_scores(
+                    pd.DataFrame(
+                        {
+                            "ticker": [ticker],
+                            "attention_score": [100.0 - index],
+                            "social_change": [0.0],
+                            "volume_change": [0.0],
+                            "price_growth_pct": [0.0],
+                            "yahoo_change": [0.0],
+                            "social_points": [0.0],
+                            "volume_points": [0.0],
+                            "price_points": [0.0],
+                            "yahoo_points": [0.0],
+                        }
+                    ),
+                    calculation_date="2026-03-10",
+                )
+
+            calendar = build_anticipated_earnings_calendar(
+                reference_date=date(2026, 3, 10),
+                database_path=db_path,
+            )
+            day = calendar["days"][15]
+            self.assertEqual(len(day), 7)
+            self.assertEqual(day[-1]["ticker"], "IBM")
+
+            attention = pd.DataFrame(
+                {
+                    "ticker": tickers + ["AMD"],
+                    "company_name": tickers + ["AMD"],
+                    "sector": ["Technology"] * (len(tickers) + 1),
+                    "attention_score": [100.0 - i for i in range(len(tickers))] + [50.0],
+                }
+            )
+            spillover = build_earnings_spillover(
+                calendar, attention, max_influencers=7, max_peers=1
+            )
+            self.assertIn("IBM", [item["ticker"] for item in spillover])
+
     def test_build_this_week_focus_window_and_sort(self) -> None:
         attention = pd.DataFrame(
             {
@@ -436,52 +537,75 @@ class DashboardDataTests(unittest.TestCase):
         self.assertEqual(focus[1]["attention_tier"], "background")
 
     def test_build_weekly_postmortem_beats_and_misses(self) -> None:
-        calendar = {
-            "days": {
-                10: [
-                    {
-                        "ticker": "BEAT",
-                        "earnings_date": date(2026, 7, 10),
-                        "is_past": True,
-                        "reaction_pct": 8.0,
-                    },
-                    {
-                        "ticker": "MISS",
-                        "earnings_date": date(2026, 7, 11),
-                        "is_past": True,
-                        "reaction_pct": -6.5,
-                    },
-                    {
-                        "ticker": "FLAT",
-                        "earnings_date": date(2026, 7, 12),
-                        "is_past": True,
-                        "reaction_pct": 1.0,
-                    },
-                    {
-                        "ticker": "NO_PRICE",
-                        "earnings_date": date(2026, 7, 12),
-                        "is_past": True,
-                        "reaction_pct": None,
-                    },
-                    {
-                        "ticker": "OLD",
-                        "earnings_date": date(2026, 6, 1),
-                        "is_past": True,
-                        "reaction_pct": -20.0,
-                    },
-                    {
-                        "ticker": "FUTURE",
-                        "earnings_date": date(2026, 7, 20),
-                        "is_past": False,
-                        "reaction_pct": None,
-                    },
-                ]
-            }
-        }
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
 
-        postmortem = build_weekly_postmortem(
-            calendar, reference_date=date(2026, 7, 14), days=7, limit=2
-        )
+        from src.storage.sqlite_store import SQLiteStore
+
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "post.db"
+            store = SQLiteStore(db_path)
+            store.upsert_earnings(
+                pd.DataFrame(
+                    {
+                        "ticker": ["BEAT", "MISS", "FLAT", "NO_PRICE", "OLD", "FUTURE"],
+                        "company_name": [
+                            "Beat Co",
+                            "Miss Co",
+                            "Flat Co",
+                            "No Price",
+                            "Old Co",
+                            "Future Co",
+                        ],
+                        "sector": ["Technology"] * 6,
+                        "earnings_date": [
+                            "2026-07-10",
+                            "2026-07-11",
+                            "2026-07-12",
+                            "2026-07-12",
+                            "2026-06-01",
+                            "2026-07-20",
+                        ],
+                        "estimated_eps": [1.0] * 6,
+                        "estimated_revenue": [10.0] * 6,
+                    }
+                )
+            )
+            store.upsert_daily_metrics(
+                pd.DataFrame(
+                    {
+                        "ticker": [
+                            "BEAT",
+                            "BEAT",
+                            "MISS",
+                            "MISS",
+                            "FLAT",
+                            "FLAT",
+                            "OLD",
+                            "OLD",
+                        ],
+                        "date": [
+                            "2026-07-10",
+                            "2026-07-11",
+                            "2026-07-11",
+                            "2026-07-12",
+                            "2026-07-12",
+                            "2026-07-13",
+                            "2026-06-01",
+                            "2026-06-02",
+                        ],
+                        "close": [100.0, 108.0, 100.0, 93.5, 100.0, 101.0, 100.0, 80.0],
+                        "volume": [1_000] * 8,
+                    }
+                )
+            )
+
+            postmortem = build_weekly_postmortem(
+                reference_date=date(2026, 7, 14),
+                days=7,
+                limit=2,
+                database_path=db_path,
+            )
 
         self.assertEqual(
             [item["ticker"] for item in postmortem["beats"]],
@@ -491,6 +615,54 @@ class DashboardDataTests(unittest.TestCase):
             [item["ticker"] for item in postmortem["misses"]],
             ["MISS", "FLAT"],
         )
+
+    def test_build_weekly_postmortem_includes_prior_month_prints(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from src.storage.sqlite_store import SQLiteStore
+
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "boundary.db"
+            store = SQLiteStore(db_path)
+            store.upsert_earnings(
+                pd.DataFrame(
+                    {
+                        "ticker": ["JUN", "JUL"],
+                        "company_name": ["June Co", "July Co"],
+                        "sector": ["Technology", "Technology"],
+                        "earnings_date": ["2026-06-28", "2026-07-02"],
+                        "estimated_eps": [1.0, 1.0],
+                        "estimated_revenue": [10.0, 10.0],
+                    }
+                )
+            )
+            store.upsert_daily_metrics(
+                pd.DataFrame(
+                    {
+                        "ticker": ["JUN", "JUN", "JUL", "JUL"],
+                        "date": [
+                            "2026-06-28",
+                            "2026-06-29",
+                            "2026-07-02",
+                            "2026-07-03",
+                        ],
+                        "close": [100.0, 90.0, 100.0, 105.0],
+                        "volume": [1_000] * 4,
+                    }
+                )
+            )
+
+            postmortem = build_weekly_postmortem(
+                reference_date=date(2026, 7, 3),
+                days=7,
+                limit=5,
+                database_path=db_path,
+            )
+
+        tickers = {item["ticker"] for item in postmortem["misses"] + postmortem["beats"]}
+        self.assertIn("JUN", tickers)
+        self.assertIn("JUL", tickers)
 
 
 if __name__ == "__main__":

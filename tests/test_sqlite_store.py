@@ -81,6 +81,26 @@ class SQLiteStoreTests(unittest.TestCase):
         self.assertEqual(month.loc[0, "attention_score"], 90.0)
         self.assertNotIn("NEXT", tickers)
 
+    def test_get_earnings_between_respects_half_open_window(self) -> None:
+        self.store.upsert_earnings(
+            pd.DataFrame(
+                {
+                    "ticker": ["IN", "EDGE", "OUT"],
+                    "company_name": ["In", "Edge", "Out"],
+                    "sector": ["Technology"] * 3,
+                    "earnings_date": ["2026-06-28", "2026-07-03", "2026-07-04"],
+                    "estimated_eps": [1.0, 1.0, 1.0],
+                    "estimated_revenue": [10.0, 10.0, 10.0],
+                }
+            )
+        )
+
+        result = self.store.get_earnings_between(date(2026, 6, 27), date(2026, 7, 3))
+        self.assertEqual(set(result["ticker"]), {"IN"})
+
+        result = self.store.get_earnings_between(date(2026, 6, 28), date(2026, 7, 4))
+        self.assertEqual(set(result["ticker"]), {"IN", "EDGE"})
+
     def test_daily_metric_upserts_merge_market_and_social_values(self) -> None:
         market = pd.DataFrame(
             {

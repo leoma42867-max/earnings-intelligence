@@ -87,17 +87,18 @@ The attention score is a single 0–100 value defined in `src/analytics/scoring.
 Each 7-day signal is scaled to 0–100 (negative/flat change scores 0) and
 combined with these weights:
 
-- **50%** — StockTwits mentions gained (raw count increase, e.g. "+450 mentions")
-- **30%** — Trading volume gained (raw share-count increase)
-- **20%** — Price momentum (percentage change)
+- **40%** — StockTwits mentions gained (raw count increase, e.g. "+450 mentions")
+- **25%** — Yahoo Finance trending-rank climb (how many spots up the list)
+- **20%** — Relative trading volume (volume vs each ticker’s own baseline)
+- **15%** — Price momentum (percentage change)
 
-Social mentions and volume are ranked by their **absolute count increase**,
-not a percentage — a stock going from 2 to 50 mentions is a 2400% "growth"
-that would otherwise swamp a mega-cap going from 5,000 to 8,000 mentions,
-even though the latter reflects far more real attention. Whichever ticker
-gained the most on a given day scores 100 on that signal, and every other
-ticker is scaled relative to that leader. Price stays percentage-based, since
-a $2 move means very different things for a $10 stock versus a $500 stock.
+Social mentions, Yahoo climbs, and volume are ranked by their **absolute
+increase**, not a percentage — a stock going from 2 to 50 mentions is a 2400%
+"growth" that would otherwise swamp a mega-cap going from 5,000 to 8,000
+mentions, even though the latter reflects far more real attention. Whichever
+ticker gained the most on a given day scores 100 on that signal, and every
+other ticker is scaled relative to that leader. Price stays percentage-based,
+since a $2 move means very different things for a $10 stock versus a $500 stock.
 
 `scripts/refresh_data.py` computes and stores this score; the dashboard reads
 the stored values, so automation and the UI always agree. Weights and the

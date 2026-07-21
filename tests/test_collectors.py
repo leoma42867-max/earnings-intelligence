@@ -190,6 +190,18 @@ class CollectorTests(unittest.TestCase):
         self.assertTrue(result.empty)
         self.assertEqual(list(result.columns), ["date", "ticker", "yahoo_trend_rank"])
 
+    @patch("src.collectors.yahoo_trending._fetch_trending_equity_ranks")
+    def test_yahoo_trend_ranks_returns_empty_when_list_has_no_equities(
+        self, fetch_mock
+    ) -> None:
+        fetch_mock.return_value = {}
+
+        result = yahoo_trending.fetch_yahoo_trend_ranks(
+            ["IBM", "AAPL"], metric_date="2026-07-14"
+        )
+
+        self.assertTrue(result.empty)
+
     @patch("src.collectors.stock_info._fetch_single_ticker")
     def test_stock_info_normalizes_symbols_and_continues_after_failure(self, fetch_mock) -> None:
         fetch_mock.side_effect = [

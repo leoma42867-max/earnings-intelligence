@@ -1,6 +1,7 @@
 """Earnings Intelligence Platform — Streamlit homepage."""
 
 import hmac
+import html
 from datetime import date
 
 import pandas as pd
@@ -8,6 +9,7 @@ import streamlit as st
 
 from config.secrets import get_setting
 from src.dashboard.data import (
+    CALENDAR_TICKERS_PER_DAY,
     attention_tier_label,
     build_anticipated_earnings_calendar,
     build_earnings_spillover,
@@ -289,11 +291,11 @@ def _company_anchor(
     title: str | None = None,
 ) -> str:
     """HTML link that stays in the current frame (no new .streamlit.app tab)."""
-    text = label if label is not None else str(ticker).upper()
-    class_attr = f' class="{css_class}"' if css_class else ""
-    title_attr = f' title="{title}"' if title else ""
+    text = html.escape(label if label is not None else str(ticker).upper())
+    class_attr = f' class="{html.escape(css_class)}"' if css_class else ""
+    title_attr = f' title="{html.escape(title)}"' if title else ""
     return (
-        f'<a{class_attr} href="{_company_href(ticker)}" target="_self"'
+        f'<a{class_attr} href="{html.escape(_company_href(ticker))}" target="_self"'
         f'{title_attr}>{text}</a>'
     )
 
@@ -320,8 +322,8 @@ def _render_ranked_table(
         cells = [
             f"<td>{index}</td>",
             f"<td>{_company_anchor(str(row.ticker))}</td>",
-            f"<td>{company_name}</td>",
-            f"<td>{earnings_date}</td>",
+            f"<td>{html.escape(str(company_name))}</td>",
+            f"<td>{html.escape(str(earnings_date))}</td>",
         ]
         if show_value:
             raw = getattr(row, value_column, None)
@@ -437,7 +439,7 @@ def _render_earnings_calendar(calendar_data: dict[str, object]) -> None:
         elif day_date < today:
             classes.append("past")
 
-        tickers = days.get(day, [])
+        tickers = days.get(day, [])[:CALENDAR_TICKERS_PER_DAY]
         ticker_parts: list[str] = []
         for item in tickers:
             label = str(item["ticker"])
@@ -456,15 +458,14 @@ def _render_earnings_calendar(calendar_data: dict[str, object]) -> None:
                 if momentum:
                     label = f"{label} {momentum}"
                     title = f"{title} · pre-report momentum {momentum} (not earnings result)"
-                score = item.get("attention_score")
                 headline = item.get("attention_headline")
                 if headline:
                     title = f"{title} · {headline}"
-                elif score is not None:
-                    title = f"{title} · attention index {score:.0f}"
+                elif item.get("attention_tier_label"):
+                    title = f"{title} · {item['attention_tier_label']}"
             ticker_parts.append(
-                f'<a class="{css}" href="{_company_href(str(item["ticker"]))}" '
-                f'target="_self" title="{title}">{label}</a>'
+                f'<a class="{html.escape(css)}" href="{html.escape(_company_href(str(item["ticker"])))}" '
+                f'target="_self" title="{html.escape(title)}">{html.escape(label)}</a>'
             )
 
         cells.append(
@@ -619,7 +620,7 @@ _render_this_week(build_this_week_focus(attention))
 
 month_calendar = build_anticipated_earnings_calendar()
 st.subheader("Last 7 days: biggest beats & misses")
-_render_weekly_postmortem(build_weekly_postmortem(month_calendar))
+_render_weekly_postmortem(build_weekly_postmortem())
 
 st.divider()
 st.subheader("Trending ahead of earnings")
@@ -655,9 +656,8 @@ with stocktwits_col:
         _render_ranked_table(
             most_mentioned,
             "current_mentions",
-            "Current Mentions",
+            "Mentions",
             "%,.0f",
-            show_value=False,
         )
 
 st.divider()

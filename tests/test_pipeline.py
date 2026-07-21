@@ -130,6 +130,36 @@ class PipelineScoringScopeTests(unittest.TestCase):
         # STALE never appears in the dashboard-facing rankings.
         final_rankings = store.get_rankings()
         self.assertNotIn("STALE", final_rankings["ticker"].tolist())
+        self.assertTrue(result.success)
+
+    def test_refresh_fails_when_upcoming_exist_but_no_scores(self) -> None:
+        store = SQLiteStore(self.db_path)
+        store.upsert_earnings(
+            pd.DataFrame(
+                {
+                    "ticker": ["ACTIVE"],
+                    "company_name": ["Active Co"],
+                    "earnings_date": [(date.today() + timedelta(days=5)).isoformat()],
+                    "estimated_eps": [1.0],
+                    "estimated_revenue": [50.0],
+                }
+            )
+        )
+
+        with (
+            patch("src.pipeline.fetch_hyped_tickers", return_value=["ACTIVE"]),
+            patch(
+                "src.pipeline.fetch_upcoming_earnings",
+                return_value=pd.DataFrame(),
+            ),
+            patch("src.pipeline.fetch_market_data"),
+            patch("src.pipeline.fetch_social_mentions"),
+            patch("src.pipeline.fetch_yahoo_trend_ranks"),
+        ):
+            result = run_refresh_pipeline(database_path=self.db_path)
+
+        self.assertFalse(result.success)
+        self.assertTrue(result.rankings.empty)
 
 
 if __name__ == "__main__":

@@ -4,10 +4,25 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
+
+
+def market_today() -> date:
+    """Return today's date on the US equity calendar (America/New_York).
+
+    SQLite ``date('now')`` is UTC, which can drop still-current US earnings a
+    few hours early in the evening. Callers should prefer this helper (or an
+    explicit ``as_of``) for ranking and upcoming-earnings windows.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("America/New_York")).date()
+    except Exception:
+        return date.today()
 
 
 class SQLiteStore:
@@ -259,14 +274,17 @@ class SQLiteStore:
                 rows,
             )
 
-    def get_upcoming_earnings(self, days: int = 30) -> pd.DataFrame:
+    def get_upcoming_earnings(
+        self, days: int = 30, as_of: date | None = None
+    ) -> pd.DataFrame:
         """Return the next earnings event per ticker inside the requested window."""
+        start = (as_of or market_today()).isoformat()
         return self._query(
             """
             WITH next_earnings AS (
                 SELECT ticker, MIN(earnings_date) AS earnings_date
                 FROM earnings
-                WHERE earnings_date BETWEEN date('now') AND date('now', ?)
+                WHERE earnings_date BETWEEN ? AND date(?, ?)
                 GROUP BY ticker
             )
             SELECT e.ticker, c.company_name, e.earnings_date,
@@ -277,7 +295,35 @@ class SQLiteStore:
             JOIN companies c ON c.ticker = e.ticker
             ORDER BY e.earnings_date, e.ticker
             """,
-            (f"+{days} days",),
+            (start, start, f"+{days} days"),
+        )
+
+    def get_earnings_between(
+        self, start: date | str, end: date | str
+    ) -> pd.DataFrame:
+        """Return tracked earnings with ``start <= earnings_date < end``.
+
+        Used by the rolling 7-day postmortem so prior-month prints still appear
+        early in a new calendar month.
+        """
+        start_s = start.isoformat() if isinstance(start, date) else str(start)
+        end_s = end.isoformat() if isinstance(end, date) else str(end)
+        return self._query(
+            """
+            WITH window_earnings AS (
+                SELECT ticker, MIN(earnings_date) AS earnings_date
+                FROM earnings
+                WHERE earnings_date >= ? AND earnings_date < ?
+                GROUP BY ticker
+            )
+            SELECT e.ticker, c.company_name, c.sector, e.earnings_date
+            FROM window_earnings w
+            JOIN earnings e ON e.ticker = w.ticker
+                           AND e.earnings_date = w.earnings_date
+            JOIN companies c ON c.ticker = e.ticker
+            ORDER BY e.earnings_date, e.ticker
+            """,
+            (start_s, end_s),
         )
 
     def get_earnings_in_month(self, year: int, month: int) -> pd.DataFrame:
@@ -365,8 +411,11 @@ class SQLiteStore:
             else None,
         }
 
-    def get_latest_earnings_for_ticker(self, ticker: str) -> dict[str, object]:
+    def get_latest_earnings_for_ticker(
+        self, ticker: str, as_of: date | None = None
+    ) -> dict[str, object]:
         """Return the nearest upcoming print, else the most recent past print."""
+        as_of_s = (as_of or market_today()).isoformat()
         frame = self._query(
             """
             SELECT e.ticker, c.company_name, c.sector, e.earnings_date,
@@ -375,13 +424,13 @@ class SQLiteStore:
             JOIN companies c ON c.ticker = e.ticker
             WHERE e.ticker = ?
             ORDER BY
-                CASE WHEN e.earnings_date >= date('now') THEN 0 ELSE 1 END,
-                CASE WHEN e.earnings_date >= date('now')
+                CASE WHEN e.earnings_date >= ? THEN 0 ELSE 1 END,
+                CASE WHEN e.earnings_date >= ?
                      THEN e.earnings_date END ASC,
                 e.earnings_date DESC
             LIMIT 1
             """,
-            (ticker.upper(),),
+            (ticker.upper(), as_of_s, as_of_s),
         )
         return frame.iloc[0].to_dict() if not frame.empty else {}
 
@@ -410,7 +459,7 @@ class SQLiteStore:
             "price_change_pct, social_mentions, yahoo_trend_rank FROM daily_metrics ORDER BY metric_date"
         )
 
-    def get_rankings(self) -> pd.DataFrame:
+    def get_rankings(self, as_of: date | None = None) -> pd.DataFrame:
         """Return the newest attention score for each company with a genuinely
         upcoming earnings date.
 
@@ -421,6 +470,7 @@ class SQLiteStore:
         inner join, not a left join) keeps the dashboard scoped to its stated
         purpose: companies with upcoming earnings, not stale history.
         """
+        as_of_s = (as_of or market_today()).isoformat()
         return self._query(
             """
             WITH latest_scores AS (
@@ -431,7 +481,7 @@ class SQLiteStore:
             next_earnings AS (
                 SELECT ticker, MIN(earnings_date) AS earnings_date
                 FROM earnings
-                WHERE earnings_date >= date('now')
+                WHERE earnings_date >= ?
                 GROUP BY ticker
             )
             SELECT a.ticker, c.company_name, c.sector, e.earnings_date,
@@ -448,7 +498,8 @@ class SQLiteStore:
             JOIN earnings e ON e.ticker = n.ticker
                            AND e.earnings_date = n.earnings_date
             ORDER BY a.attention_score DESC, a.ticker
-            """
+            """,
+            (as_of_s,),
         )
 
     def _migrate_legacy_schema(self, conn: sqlite3.Connection) -> None:
