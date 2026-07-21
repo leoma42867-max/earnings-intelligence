@@ -9,7 +9,6 @@ sync with the storage schema and scoring model.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
 
 import pandas as pd
 
@@ -32,6 +31,7 @@ class PipelineResult:
     social_mentions_collected: bool = False
     rankings: pd.DataFrame = field(default_factory=pd.DataFrame)
     messages: list[str] = field(default_factory=list)
+    success: bool = True
 
     def log(self, message: str) -> None:
         self.messages.append(message)
@@ -43,8 +43,11 @@ def run_refresh_pipeline(database_path=DATABASE_FILE) -> PipelineResult:
     Safe to call repeatedly (all storage operations are idempotent upserts).
     Any collector failure for one ticker does not stop the overall run.
     """
+    from src.storage.sqlite_store import market_today
+
     result = PipelineResult()
     store = SQLiteStore(database_path)
+    as_of = market_today()
 
     result.log(f"Finding today's top {TICKER_UNIVERSE_SIZE} most-hyped tickers...")
     universe = fetch_hyped_tickers(TICKER_UNIVERSE_SIZE)
@@ -88,7 +91,7 @@ def run_refresh_pipeline(database_path=DATABASE_FILE) -> PipelineResult:
     # (see ``scoring._normalize_change``), so including long-departed
     # tickers still sitting in history would let a stale one-off spike from
     # months ago permanently suppress every current score.
-    upcoming = store.get_upcoming_earnings()
+    upcoming = store.get_upcoming_earnings(as_of=as_of)
     active_tickers = set(upcoming["ticker"]) if not upcoming.empty else set()
     all_metrics = store.get_all_daily_metrics()
     if active_tickers:
@@ -99,10 +102,20 @@ def run_refresh_pipeline(database_path=DATABASE_FILE) -> PipelineResult:
 
     if growth.empty:
         result.log("No metric history available yet — no scores produced.")
+        if active_tickers:
+            result.success = False
+            result.log(
+                "Refresh failed: upcoming earnings exist but no scores were produced."
+            )
         return result
 
     rankings = calculate_attention_scores(growth)
-    store.upsert_attention_scores(rankings, calculation_date=date.today().isoformat())
+    store.upsert_attention_scores(rankings, calculation_date=as_of.isoformat())
     result.rankings = rankings
     result.log(f"Saved {len(rankings)} attention score(s).")
+    if result.rankings.empty and active_tickers:
+        result.success = False
+        result.log(
+            "Refresh failed: upcoming earnings exist but no scores were produced."
+        )
     return result

@@ -15,7 +15,9 @@ from src.storage.sqlite_store import SQLiteStore
 # maximum list size when measuring how many ranks they climbed over 7 days.
 _OFF_YAHOO_LIST_RANK = 101
 # Keep day cells readable — show the highest-attention tickers first.
-_CALENDAR_TICKERS_PER_DAY = 6
+# Truncation is applied at render time so spillover still sees every event.
+CALENDAR_TICKERS_PER_DAY = 6
+_CALENDAR_TICKERS_PER_DAY = CALENDAR_TICKERS_PER_DAY  # backwards-compatible alias
 _REACTION_BULLISH_PCT = 3.0
 _REACTION_BEARISH_PCT = -3.0
 # Display tiers are relative to today's upcoming-earnings batch (not raw /100).
@@ -227,7 +229,13 @@ def annotate_attention_display(attention: pd.DataFrame) -> pd.DataFrame:
 def _post_earnings_reaction_pct(
     metrics: pd.DataFrame, ticker: str, earnings_date: date
 ) -> float | None:
-    """Return % price change from earnings-day close to the next trading close."""
+    """Return % price change from earnings-day close to the next trading close.
+
+    Approximation: ignores BMO vs AMC timing. For before-market-open prints the
+    earnings-day close already includes much of the move, so the measured
+    “next-day” reaction can understate the full gap. Prefer this as directional
+    color on the calendar, not a precise event study.
+    """
     if metrics.empty or "close" not in metrics.columns:
         return None
     history = metrics[metrics["ticker"] == ticker].copy()
@@ -287,13 +295,17 @@ def _pre_earnings_momentum(
 def build_anticipated_earnings_calendar(
     reference_date: date | None = None,
     database_path: Path | str = DATABASE_FILE,
-    tickers_per_day: int = _CALENDAR_TICKERS_PER_DAY,
+    tickers_per_day: int | None = None,
 ) -> dict[str, object]:
     """Build the current-month anticipated-earnings calendar payload.
 
     ``reference_date`` defaults to today so the month rolls over automatically
     when the calendar changes. Past days use post-earnings price reaction
     sentiment; future days use attention heat and optional pre-report momentum.
+
+    Day lists are returned in full. Pass ``tickers_per_day`` only when a caller
+    wants display truncation; the homepage renderer truncates separately so
+    spillover can still see every influencer.
     """
     today = reference_date or date.today()
     store = SQLiteStore(database_path)
@@ -393,7 +405,8 @@ def build_anticipated_earnings_calendar(
                         item["ticker"],
                     )
                 )
-            by_day[day] = tickers[:tickers_per_day]
+            if tickers_per_day is not None:
+                by_day[day] = tickers[:tickers_per_day]
 
     return {
         "year": today.year,
@@ -464,9 +477,7 @@ def build_earnings_spillover(
             watch_note = "sector lift after bullish print"
         elif item.get("is_past"):
             watch_note = "mixed post-report reaction — watch peers"
-        elif item.get("attention_tier") == "on_radar" or (
-            item.get("attention_score") or 0
-        ) >= 60:
+        elif item.get("attention_tier") == "on_radar":
             watch_note = "high attention into print — watch peers"
         else:
             watch_note = "upcoming influencer print — watch peers"
@@ -585,55 +596,52 @@ def build_this_week_focus(
 
 
 def build_weekly_postmortem(
-    calendar: dict[str, object],
     reference_date: date | None = None,
     days: int = 7,
     limit: int = 5,
+    database_path: Path | str = DATABASE_FILE,
 ) -> dict[str, list[dict[str, object]]]:
-    """Return biggest post-report beats and misses from the last ``days`` days."""
+    """Return biggest post-report beats and misses from the last ``days`` days.
+
+    Queries a rolling date window from SQLite so prints near a month boundary
+    (e.g. Jun 28 when today is Jul 3) are included even when the month calendar
+    only shows the current month.
+    """
     today = reference_date or date.today()
     start = date.fromordinal(today.toordinal() - days)
+    store = SQLiteStore(database_path)
+    events = store.get_earnings_between(start, today)
+    metrics = store.get_all_daily_metrics()
+
     items: list[dict[str, object]] = []
-    for day_tickers in calendar.get("days", {}).values():
-        for item in day_tickers:
-            event_date = item.get("earnings_date")
-            reaction = item.get("reaction_pct")
-            if not item.get("is_past") or reaction is None or event_date is None:
+    if not events.empty:
+        framed = events.copy()
+        framed["earnings_date"] = pd.to_datetime(framed["earnings_date"]).dt.date
+        for _, row in framed.iterrows():
+            event_date = row["earnings_date"]
+            if not (start <= event_date < today):
                 continue
-            if start <= event_date < today:
-                items.append(item)
+            ticker = str(row["ticker"])
+            reaction = _post_earnings_reaction_pct(metrics, ticker, event_date)
+            if reaction is None:
+                continue
+            items.append(
+                {
+                    "ticker": ticker,
+                    "company_name": str(row.get("company_name") or ticker),
+                    "sector": str(row.get("sector") or "") or None,
+                    "earnings_date": event_date,
+                    "is_past": True,
+                    "reaction_pct": reaction,
+                    "sentiment": reaction_sentiment(reaction),
+                }
+            )
 
     beats = sorted(
         items, key=lambda row: float(row["reaction_pct"]), reverse=True
     )[:limit]
     misses = sorted(items, key=lambda row: float(row["reaction_pct"]))[:limit]
     return {"beats": beats, "misses": misses}
-
-
-def coverage_counts(
-    attention: pd.DataFrame, metrics: pd.DataFrame | None = None
-) -> dict[str, int]:
-    """Return honest coverage counts for the homepage caption."""
-    tracked = int(len(attention)) if not attention.empty else 0
-    yahoo = 0
-    stocktwits = 0
-    if not attention.empty and "current_yahoo_rank" in attention.columns:
-        yahoo = int(attention["current_yahoo_rank"].notna().sum())
-    if not attention.empty and "current_mentions" in attention.columns:
-        stocktwits = int(attention["current_mentions"].notna().sum())
-    elif (
-        metrics is not None
-        and not metrics.empty
-        and "social_mentions" in metrics.columns
-    ):
-        stocktwits = int(
-            metrics.dropna(subset=["social_mentions"])["ticker"].nunique()
-        )
-    return {
-        "tracked": tracked,
-        "yahoo": yahoo,
-        "stocktwits": stocktwits,
-    }
 
 
 def get_researchable_tickers(
@@ -659,12 +667,8 @@ def load_dashboard_data() -> dict[str, pd.DataFrame]:
         "earnings": earnings,
         "metrics": metrics,
         "attention": pd.DataFrame(),
-        "social_growth": pd.DataFrame(),
-        "social_drop": pd.DataFrame(),
         "most_mentioned": pd.DataFrame(),
         "yahoo_rank_growth": pd.DataFrame(),
-        "yahoo_rank_drop": pd.DataFrame(),
-        "most_trending_yahoo": pd.DataFrame(),
     }
 
     if attention.empty:
@@ -682,34 +686,17 @@ def load_dashboard_data() -> dict[str, pd.DataFrame]:
     most_mentioned = attention.dropna(subset=["current_mentions"]).sort_values(
         "current_mentions", ascending=False
     )
-    social_with_change = attention.dropna(subset=["social_change"])
-    social_growth = social_with_change.loc[
-        social_with_change["social_change"] > 0
-    ].sort_values("social_change", ascending=False)
-    social_drop = social_with_change.loc[
-        social_with_change["social_change"] < 0
-    ].sort_values("social_change", ascending=True)
-    most_trending_yahoo = attention.dropna(subset=["current_yahoo_rank"]).sort_values(
-        "current_yahoo_rank", ascending=True
-    )
     yahoo_with_change = attention.dropna(subset=["yahoo_rank_change"])
     yahoo_rank_growth = yahoo_with_change.loc[
         yahoo_with_change["yahoo_rank_change"] > 0
     ].sort_values("yahoo_rank_change", ascending=False)
-    yahoo_rank_drop = yahoo_with_change.loc[
-        yahoo_with_change["yahoo_rank_change"] < 0
-    ].sort_values("yahoo_rank_change", ascending=True)
 
     return {
         "earnings": earnings,
         "metrics": metrics,
         "attention": attention,
-        "social_growth": social_growth,
-        "social_drop": social_drop,
         "most_mentioned": most_mentioned,
-        "most_trending_yahoo": most_trending_yahoo,
         "yahoo_rank_growth": yahoo_rank_growth,
-        "yahoo_rank_drop": yahoo_rank_drop,
     }
 
 
@@ -816,6 +803,7 @@ def get_company_data(
         company_earnings.iloc[0].to_dict() if not company_earnings.empty else {}
     )
     score = company_score.iloc[0].to_dict() if not company_score.empty else {}
+    in_live_rankings = bool(score)
 
     # Past prints drop out of upcoming rankings — fall back to stored rows.
     store = SQLiteStore(database_path)
@@ -834,11 +822,17 @@ def get_company_data(
     )
 
     why_chips = build_why_chips(score)
-    headline = score.get("attention_headline") or format_attention_headline(
-        score.get("attention_rank"),
-        score.get("attention_total"),
-        score.get("attention_tier"),
-    )
+    if in_live_rankings:
+        headline = score.get("attention_headline") or format_attention_headline(
+            score.get("attention_rank"),
+            score.get("attention_total"),
+            score.get("attention_tier"),
+        )
+    elif score:
+        # Avoid a bare "Background" that looks like today's relative tier.
+        headline = "Not in this week's rankings"
+    else:
+        headline = "No attention score yet"
 
     return {
         "metrics": company_metrics,
@@ -847,6 +841,7 @@ def get_company_data(
         "peers": peers,
         "why_chips": why_chips,
         "attention_headline": headline,
+        "in_live_rankings": in_live_rankings,
     }
 
 

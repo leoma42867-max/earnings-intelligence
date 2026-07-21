@@ -27,6 +27,8 @@ def main() -> None:
     else:
         print("No rankings produced.")
 
+    raise SystemExit(0 if result.success else 1)
+
 
 if __name__ == "__main__":
     main()
