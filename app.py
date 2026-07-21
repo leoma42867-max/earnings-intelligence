@@ -155,6 +155,30 @@ st.markdown(
             color: #9fb0cc;
             font-size: 0.82rem;
         }
+        .ranked-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            margin: 0.15rem 0 0.6rem 0;
+        }
+        .ranked-table th {
+            color: #9fb0cc;
+            font-weight: 600;
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid #23304d;
+        }
+        .ranked-table td {
+            color: #cbd5e1;
+            padding: 8px 10px;
+            border-bottom: 1px solid #1a243a;
+        }
+        .ranked-table a {
+            color: #f3f7ff;
+            font-weight: 700;
+            text-decoration: none;
+        }
+        .ranked-table a:hover { color: #93c5fd; }
         .postmortem-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -224,6 +248,23 @@ st.markdown(
             .postmortem-grid { grid-template-columns: 1fr; }
         }
     </style>
+    <script>
+      // Streamlit often forces target=_blank on links; keep Company research
+      // inside this frame so marketslite.com/app visitors don't jump to a
+      // bare .streamlit.app tab.
+      document.addEventListener(
+        "click",
+        function (event) {
+          const anchor = event.target && event.target.closest
+            ? event.target.closest('a[href*="Company"]')
+            : null;
+          if (!anchor) return;
+          anchor.setAttribute("target", "_self");
+          anchor.removeAttribute("rel");
+        },
+        true
+      );
+    </script>
     """,
     unsafe_allow_html=True,
 )
@@ -240,6 +281,23 @@ def _company_href(ticker: str) -> str:
     return f"/Company?ticker={str(ticker).upper()}"
 
 
+def _company_anchor(
+    ticker: str,
+    *,
+    label: str | None = None,
+    css_class: str = "",
+    title: str | None = None,
+) -> str:
+    """HTML link that stays in the current frame (no new .streamlit.app tab)."""
+    text = label if label is not None else str(ticker).upper()
+    class_attr = f' class="{css_class}"' if css_class else ""
+    title_attr = f' title="{title}"' if title else ""
+    return (
+        f'<a{class_attr} href="{_company_href(ticker)}" target="_self"'
+        f'{title_attr}>{text}</a>'
+    )
+
+
 def _render_ranked_table(
     data: pd.DataFrame,
     value_column: str,
@@ -250,25 +308,37 @@ def _render_ranked_table(
 ) -> None:
     """Render a numbered top-10 table shared by Yahoo and StockTwits sections."""
     display = data.head(10).copy()
-    display.insert(0, "rank", range(1, len(display) + 1))
-    display["ticker_link"] = display["ticker"].map(_company_href)
-    columns = ["rank", "ticker_link", "company_name", "earnings_date"]
-    column_config: dict[str, object] = {
-        "ticker_link": st.column_config.LinkColumn(
-            "Ticker",
-            display_text=r"ticker=([A-Z0-9.\-]+)",
-        ),
-    }
+    header = "<tr><th>#</th><th>Ticker</th><th>Company</th><th>Earnings</th>"
     if show_value:
-        columns.append(value_column)
-        column_config[value_column] = st.column_config.NumberColumn(
-            value_label, format=value_format
-        )
-    st.dataframe(
-        display[columns],
-        use_container_width=True,
-        hide_index=True,
-        column_config=column_config,
+        header += f"<th>{value_label}</th>"
+    header += "</tr>"
+
+    body_rows: list[str] = []
+    for index, row in enumerate(display.itertuples(index=False), start=1):
+        earnings_date = getattr(row, "earnings_date", "—")
+        company_name = getattr(row, "company_name", getattr(row, "ticker"))
+        cells = [
+            f"<td>{index}</td>",
+            f"<td>{_company_anchor(str(row.ticker))}</td>",
+            f"<td>{company_name}</td>",
+            f"<td>{earnings_date}</td>",
+        ]
+        if show_value:
+            raw = getattr(row, value_column, None)
+            if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+                formatted = "—"
+            else:
+                try:
+                    formatted = value_format % float(raw)
+                except (TypeError, ValueError):
+                    formatted = str(raw)
+            cells.append(f"<td>{formatted}</td>")
+        body_rows.append(f"<tr>{''.join(cells)}</tr>")
+
+    st.markdown(
+        f'<table class="ranked-table"><thead>{header}</thead>'
+        f"<tbody>{''.join(body_rows)}</tbody></table>",
+        unsafe_allow_html=True,
     )
 
 
@@ -294,8 +364,8 @@ def _render_this_week(focus: list[dict[str, object]]) -> None:
         rows.append(
             f'<div class="this-week-row">'
             f'<span class="this-week-date">{date_text}</span>'
-            f'<a class="this-week-ticker" href="{_company_href(str(item["ticker"]))}">'
-            f'{item["ticker"]}</a>'
+            f'<a class="this-week-ticker" href="{_company_href(str(item["ticker"]))}" '
+            f'target="_self">{item["ticker"]}</a>'
             f'<span class="this-week-meta this-week-heat-{heat}">{headline}</span>'
             f'<span class="why-chip-inline">{chip_text}</span>'
             f"</div>"
@@ -322,7 +392,8 @@ def _render_weekly_postmortem(postmortem: dict[str, list[dict[str, object]]]) ->
             reaction = float(item["reaction_pct"])
             parts.append(
                 f'<div class="postmortem-row">'
-                f'<a href="{_company_href(str(item["ticker"]))}">{item["ticker"]}</a>'
+                f'<a href="{_company_href(str(item["ticker"]))}" target="_self">'
+                f'{item["ticker"]}</a>'
                 f'<span class="postmortem-{kind}">{reaction:+.1f}%</span>'
                 f"</div>"
             )
@@ -393,7 +464,7 @@ def _render_earnings_calendar(calendar_data: dict[str, object]) -> None:
                     title = f"{title} · attention index {score:.0f}"
             ticker_parts.append(
                 f'<a class="{css}" href="{_company_href(str(item["ticker"]))}" '
-                f'title="{title}">{label}</a>'
+                f'target="_self" title="{title}">{label}</a>'
             )
 
         cells.append(
@@ -447,7 +518,8 @@ def _render_earnings_spillover(spillover: list[dict[str, object]]) -> None:
         peers = item.get("peers") or []
         peer_text = (
             ", ".join(
-                f'<a href="{_company_href(str(peer["ticker"]))}">{peer["ticker"]}</a>'
+                f'<a href="{_company_href(str(peer["ticker"]))}" target="_self">'
+                f'{peer["ticker"]}</a>'
                 for peer in peers
             )
             if peers
@@ -456,7 +528,8 @@ def _render_earnings_spillover(spillover: list[dict[str, object]]) -> None:
         st.markdown(
             f'<div class="spillover-card">'
             f'<div class="spillover-title">'
-            f'<a href="{_company_href(str(item["ticker"]))}">{item["ticker"]}</a> '
+            f'<a href="{_company_href(str(item["ticker"]))}" target="_self">'
+            f'{item["ticker"]}</a> '
             f'<span class="spillover-status-{status}">({status_label})</span>'
             f"{reaction_bit}</div>"
             f'<div class="spillover-meta">{item.get("company_name")} · '
