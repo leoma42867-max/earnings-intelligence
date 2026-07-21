@@ -35,7 +35,10 @@ def _format_value(value: object, pattern: str) -> str:
 
 
 st.set_page_config(
-    page_title="Company Research | MarketsLite", page_icon="◈", layout="wide"
+    page_title="Company Research | MarketsLite",
+    page_icon="◈",
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
@@ -127,12 +130,14 @@ def load_company(ticker: str) -> dict[str, object]:
 
 tickers = get_company_list()
 if not tickers:
+    st.page_link("app.py", label="← Back to home")
     st.warning("No company data is available. Run `python scripts/refresh_data.py` first.")
     st.stop()
 
 with st.sidebar:
     st.markdown("## ◈ MarketsLite")
     st.caption("Company research")
+    st.page_link("app.py", label="← Back to home", use_container_width=True)
     st.divider()
     if st.button("Reload database", use_container_width=True):
         st.cache_data.clear()
@@ -151,6 +156,8 @@ score = company["score"]
 peers = company.get("peers") or []
 why_chips = company.get("why_chips") or ["Quiet this week"]
 headline = company.get("attention_headline") or "Background"
+
+st.page_link("app.py", label="← Back to home")
 
 if metrics.empty:
     st.warning(f"No historical metrics are available for {selected_ticker}.")
